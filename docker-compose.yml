@@ -1,11 +1,10 @@
-version: '3.8'
-
 services:
   setup:
     image: alpine:latest
     volumes:
       - ./:/setup
       - tak_data:/opt/tak
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - AUTO_SETUP=${AUTO_SETUP:-true}
       - TAK_ORG=${TAK_ORG:-TAK}
@@ -13,13 +12,17 @@ services:
       - TAK_CITY=${TAK_CITY:-San Francisco}
     command: |
       sh -c '
+        echo "Installing required tools..."
+        apk add --no-cache bash unzip openssl curl docker-compose docker-cli
+        
         if [ "$$AUTO_SETUP" = "true" ] && [ -f /setup/takserver-docker-*.zip ]; then
           echo "Setting up TAK Server..."
           cd /setup
           chmod +x scripts/setup-unraid-complete.sh
-          ./scripts/setup-unraid-complete.sh
+          bash ./scripts/setup-unraid-complete.sh
         else
           echo "Waiting for manual setup or ZIP file..."
+          echo "Place takserver-docker-5.4-RELEASE-XX.zip in this directory"
           sleep infinity
         fi
       '
