@@ -16,7 +16,8 @@
 2. Place the ZIP file in /mnt/user/appdata/tak-server
 3. Start this container - completely automated setup begins
 4. Monitor container logs for progress and generated credentials
-5. Access TAK Server at https://YOUR-IP:8445 after setup completes
+5. Copy docker-compose.yml to setup directory and run: docker-compose up -d
+6. Access TAK Server at https://YOUR-IP:8445
 
 **FEATURES:**
 ✓ Bulletproof automated setup with comprehensive error handling
@@ -24,9 +25,10 @@
 ✓ Automatic JKS certificate generation (required for TAK 5.4)
 ✓ Network binding fixes for Docker compatibility
 ✓ Complete validation and secure credential generation
+✓ Automatic Community Application mode detection
 
 **AFTER SETUP:**
-TAK Server runs independently via docker-compose. This setup container can be stopped after completion.</Overview>
+This container prepares all TAK Server files, certificates, and configuration. After completion, copy the docker-compose.yml from the GitHub repository to the setup directory and run docker-compose up -d to deploy TAK Server.</Overview>
   <Category>Tools:System Network:Management</Category>
   <WebUI>https://[IP]:[PORT:8445]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server.xml</TemplateURL>
@@ -39,6 +41,7 @@ TAK Server runs independently via docker-compose. This setup container can be st
     git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &&
     cp -r /tmp/taksetup/scripts /setup/ &&
     cp /tmp/taksetup/CoreConfig.xml /setup/ &&
+    cp /tmp/taksetup/docker-compose.yml /setup/ &&
     cd /setup &&
     if [ -f takserver-docker-*.zip ]; then
       echo 'Extracting TAK Server files (memory-optimized)...' &&
@@ -48,12 +51,11 @@ TAK Server runs independently via docker-compose. This setup container can be st
       echo 'Files extracted successfully'
     fi &&
     chmod +x scripts/setup-unraid-complete.sh &&
-    sed -i 's/validate_zip_file/validate_or_skip_zip/' scripts/setup-unraid-complete.sh &&
     bash scripts/setup-unraid-complete.sh
   "</PostArgs>
   
-  <Config Name="Setup Directory" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Setup Directory" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all files will be prepared" Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket access required for automated setup" Type="Path" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="TAK Web Interface" Target="8445" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="ATAK Client Port" Target="8092" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="TAK Web Interface" Target="8445" Default="8445" Mode="tcp" Description="Port for TAK Server web interface (after docker-compose deployment)" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="ATAK Client Port" Target="8092" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients (after docker-compose deployment)" Type="Port" Display="always" Required="true" Mask="false"/>
 </Container>
