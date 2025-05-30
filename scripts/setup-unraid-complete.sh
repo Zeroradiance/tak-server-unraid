@@ -351,27 +351,27 @@ IP.1 = $SERVER_IP")
 convert_to_jks() {
     echo -e "${BLUE}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
     
-    # Ensure we're in the right directory
-    cd /setup
-    local cert_path="$(pwd)/tak/certs/files"
+    # Use absolute path to certificate files
+    local cert_path="/setup/tak/certs/files"
     
     # Debug: Check if files exist before conversion
-    echo -e "${YELLOW}Checking certificate files...${NC}"
-    ls -la tak/certs/files/
+    echo -e "${YELLOW}Checking certificate files at: $cert_path${NC}"
+    ls -la "$cert_path"
     
-    if [ ! -f "tak/certs/files/takserver.key" ]; then
-        echo -e "${RED}Error: takserver.key not found at tak/certs/files/takserver.key${NC}"
+    if [ ! -f "$cert_path/takserver.key" ]; then
+        echo -e "${RED}Error: takserver.key not found at $cert_path/takserver.key${NC}"
         exit 1
     fi
     
-    if [ ! -f "tak/certs/files/takserver.pem" ]; then
-        echo -e "${RED}Error: takserver.pem not found at tak/certs/files/takserver.pem${NC}"
+    if [ ! -f "$cert_path/takserver.pem" ]; then
+        echo -e "${RED}Error: takserver.pem not found at $cert_path/takserver.pem${NC}"
         exit 1
     fi
     
     echo -e "${YELLOW}Certificate files found, proceeding with JKS conversion...${NC}"
+    echo -e "${YELLOW}Mounting: $cert_path to /certs in container${NC}"
     
-    # Run OpenJDK container to create JKS files with correct paths
+    # Run OpenJDK container to create JKS files with absolute path
     if ! docker run --rm -v "$cert_path":/certs openjdk:17-slim bash -c "
         cd /certs && 
         echo 'Contents of /certs:' && ls -la &&
@@ -400,14 +400,14 @@ convert_to_jks() {
     fi
     
     # Verify JKS files were created
-    if [ ! -f "tak/certs/files/takserver.jks" ] || [ ! -f "tak/certs/files/truststore-root.jks" ]; then
+    if [ ! -f "$cert_path/takserver.jks" ] || [ ! -f "$cert_path/truststore-root.jks" ]; then
         echo -e "${RED}Error: JKS files were not created properly${NC}"
         exit 1
     fi
     
     # Set proper permissions
-    chmod 644 tak/certs/files/*.pem tak/certs/files/*.p12 tak/certs/files/*.zip tak/certs/files/*.jks 2>/dev/null || true
-    chmod 600 tak/certs/files/*.key 2>/dev/null || true
+    chmod 644 "$cert_path"/*.pem "$cert_path"/*.p12 "$cert_path"/*.zip "$cert_path"/*.jks 2>/dev/null || true
+    chmod 600 "$cert_path"/*.key 2>/dev/null || true
     
     echo -e "${GREEN}✓ JKS certificates created and validated successfully${NC}"
 }
