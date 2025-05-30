@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK server setup script sponsored by CloudRF.com - "The API for RF"
-# Complete version for Unraid with automatic JKS certificate generation
+# Complete version for Unraid with automatic JKS certificate generation and docker directory copy fix
 
 # Color codes for output
 RED='\033[0;31m'
@@ -10,7 +10,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}TAK server setup script sponsored by CloudRF.com - \"The API for RF\"${NC}"
-echo -e "${GREEN}Complete version for Unraid with automatic JKS generation${NC}"
+echo -e "${GREEN}Complete version for Unraid with automatic JKS generation and docker directory copy fix${NC}"
 echo ""
 
 # Fix architecture detection for Unraid
@@ -64,10 +64,13 @@ fi
 # Create tak directory and copy files
 echo "Setting up TAK server files..."
 rm -rf tak 2>/dev/null || true
+rm -rf docker 2>/dev/null || true
 mkdir -p tak
 cp -r "$extracted_dir"/tak/* tak/
+cp -r "$extracted_dir"/docker ./
 chmod +x tak/*.sh tak/db-utils/*.sh tak/certs/*.sh 2>/dev/null || true
 rm -rf "$temp_dir"
+echo "Docker directory copied successfully"
 
 # Generate TAK-compliant passwords
 admin_pass="TakAdmin$(openssl rand -base64 6 | tr -dc 'a-zA-Z0-9')!@#"
@@ -190,7 +193,7 @@ rm -rf temp_dp
 
 echo "All PEM certificates generated successfully"
 
-# **NEW: Automatically convert PEM to JKS using OpenJDK container**
+# **CRITICAL: Automatically convert PEM to JKS using OpenJDK container**
 echo -e "${YELLOW}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
 
 # Get the absolute path to certificates
