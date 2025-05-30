@@ -1,0 +1,38 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: ./docker/amd64/Dockerfile.takserver-db
+    volumes:
+      - "db_data:/var/lib/postgresql/data:z"
+      - "/mnt/user/appdata/tak-server-unraid/tak:/opt/tak:z"
+    networks:
+      tak:
+        aliases:
+          - tak-database
+    restart: unless-stopped
+    
+  tak:
+    build:
+      context: .
+      dockerfile: ./docker/amd64/Dockerfile.takserver
+    volumes:
+      - "/mnt/user/appdata/tak-server-unraid/tak:/opt/tak:z"
+    ports:
+      - "8445:8443"
+      - "8446:8444"
+      - "8447:8446"
+      - "8092:8089"
+      - "9003:9000"
+      - "9004:9001"
+    networks:
+      tak:
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  db_data:
+    
+networks:
+  tak:
