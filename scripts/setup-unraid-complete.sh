@@ -44,7 +44,7 @@ trap 'handle_error $LINENO $?' ERR
 # Validation functions
 validate_tools() {
     echo -e "${BLUE}Validating required tools...${NC}"
-    for tool in unzip docker-compose openssl docker; do
+    for tool in unzip docker-compose openssl docker keytool; do
         if ! command -v $tool &> /dev/null; then
             echo -e "${RED}Error: $tool command not found.${NC}"
             echo -e "${RED}Please install $tool and try again.${NC}"
@@ -349,67 +349,44 @@ IP.1 = $SERVER_IP")
 }
 
 convert_to_jks() {
-    echo -e "${BLUE}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
+    echo -e "${BLUE}Converting PEM certificates to JKS format...${NC}"
     
-    # Use absolute path to certificate files
-    local cert_path="/setup/tak/certs/files"
+    # Navigate to certificate directory
+    cd /setup/tak/certs/files
     
-    # Debug: Check if files exist before conversion
-    echo -e "${YELLOW}Checking certificate files at: $cert_path${NC}"
-    ls -la "$cert_path"
+    echo -e "${YELLOW}Converting certificates using local Java installation...${NC}"
+    ls -la
     
-    if [ ! -f "$cert_path/takserver.key" ]; then
-        echo -e "${RED}Error: takserver.key not found at $cert_path/takserver.key${NC}"
-        exit 1
-    fi
+    # Create PKCS12 file
+    echo -e "${YELLOW}Creating PKCS12 keystore...${NC}"
+    openssl pkcs12 -export -out takserver.p12 \
+        -inkey takserver.key -in takserver.pem -certfile ca.pem \
+        -password pass:$CERT_PASSWORD
     
-    if [ ! -f "$cert_path/takserver.pem" ]; then
-        echo -e "${RED}Error: takserver.pem not found at $cert_path/takserver.pem${NC}"
-        exit 1
-    fi
+    # Convert to JKS
+    echo -e "${YELLOW}Converting to JKS format...${NC}"
+    keytool -importkeystore \
+        -srckeystore takserver.p12 -srcstoretype PKCS12 -srcstorepass $CERT_PASSWORD \
+        -destkeystore takserver.jks -deststoretype JKS -deststorepass $CERT_PASSWORD \
+        -alias 1 -destalias takserver -noprompt
     
-    echo -e "${YELLOW}Certificate files found, proceeding with JKS conversion...${NC}"
-    echo -e "${YELLOW}Mounting: $cert_path to /certs in container${NC}"
+    # Create truststore
+    echo -e "${YELLOW}Creating JKS truststore...${NC}"
+    keytool -import -trustcacerts -file ca.pem -alias tak-ca \
+        -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt
     
-    # Run OpenJDK container to create JKS files with absolute path
-    if ! docker run --rm -v "$cert_path":/certs openjdk:17-slim bash -c "
-        cd /certs && 
-        echo 'Contents of /certs:' && ls -la &&
-        apt update >/dev/null 2>&1 && apt install -y openssl >/dev/null 2>&1 &&
-        
-        # Make sure we're working with the files in the current directory
-        openssl pkcs12 -export -out takserver.p12 \
-            -inkey takserver.key -in takserver.pem -certfile ca.pem \
-            -password pass:$CERT_PASSWORD &&
-        
-        keytool -importkeystore \
-            -srckeystore takserver.p12 -srcstoretype PKCS12 -srcstorepass $CERT_PASSWORD \
-            -destkeystore takserver.jks -deststoretype JKS -deststorepass $CERT_PASSWORD \
-            -alias 1 -destalias takserver -noprompt &&
-        
-        keytool -import -trustcacerts -file ca.pem -alias tak-ca \
-            -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt &&
-        
-        cp truststore-root.jks fed-truststore.jks &&
-        
-        # Show success confirmation
-        echo 'JKS files created successfully:' && ls -la *.jks
-    "; then
-        echo -e "${RED}Error: JKS certificate conversion failed${NC}"
-        exit 1
-    fi
+    # Copy truststore for federation
+    cp truststore-root.jks fed-truststore.jks
     
-    # Verify JKS files were created
-    if [ ! -f "$cert_path/takserver.jks" ] || [ ! -f "$cert_path/truststore-root.jks" ]; then
-        echo -e "${RED}Error: JKS files were not created properly${NC}"
-        exit 1
-    fi
+    echo -e "${GREEN}✓ JKS certificates created successfully${NC}"
+    echo -e "${YELLOW}JKS files created:${NC}"
+    ls -la *.jks
     
     # Set proper permissions
-    chmod 644 "$cert_path"/*.pem "$cert_path"/*.p12 "$cert_path"/*.zip "$cert_path"/*.jks 2>/dev/null || true
-    chmod 600 "$cert_path"/*.key 2>/dev/null || true
+    chmod 644 *.pem *.p12 *.zip *.jks 2>/dev/null || true
+    chmod 600 *.key 2>/dev/null || true
     
-    echo -e "${GREEN}✓ JKS certificates created and validated successfully${NC}"
+    cd /setup
 }
 
 start_containers() {
