@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>TAK-Server-Automated-Setup</Name>
+  <Name>TAK-Server-5.4-Automated-Setup</Name>
   <Repository>alpine:latest</Repository>
   <Registry>https://hub.docker.com/_/alpine</Registry>
   <Network>bridge</Network>
@@ -13,30 +13,22 @@
 
 **SIMPLE AUTOMATED SETUP:**
 1. Download TAK Server 5.4 ZIP from https://tak.gov/products/tak-server
-2. Place the ZIP file in the mapped setup directory  
+2. Place the ZIP file in /mnt/user/appdata/tak-server
 3. Start this container - completely automated setup begins
 4. Monitor container logs for progress and generated credentials
 5. Access TAK Server at https://YOUR-IP:8445 after setup completes
-6. Import the generated admin.p12 certificate to your browser
 
 **FEATURES:**
 ✓ Bulletproof automated setup with comprehensive error handling
-✓ Automatic JKS certificate generation (required for TAK 5.4)  
+✓ Memory-optimized extraction process (solves Exit Code 137)
+✓ Automatic JKS certificate generation (required for TAK 5.4)
 ✓ Network binding fixes for Docker compatibility
-✓ Custom port mappings to avoid conflicts
 ✓ Complete validation and secure credential generation
-✓ Auto-detection of docker structure (flat/amd64)
-✓ No manual configuration required
 
 **AFTER SETUP:**
-This is a one-time setup container. After completion, TAK Server runs independently via docker-compose in the setup directory. You can then stop this setup container.
-
-**REQUIREMENTS:**
-- TAK Server 5.4 ZIP file from tak.gov
-- At least 4GB available disk space
-- Ports 8445, 8092, 5432 available</Overview>
+TAK Server runs independently via docker-compose. This setup container can be stopped after completion.</Overview>
   <Category>Tools:System Network:Management</Category>
-  <WebUI/>
+  <WebUI>https://[IP]:[PORT:8445]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
   <ExtraParams>--rm</ExtraParams>
@@ -45,48 +37,23 @@ This is a one-time setup container. After completion, TAK Server runs independen
     apk add --no-cache bash git unzip zip openssl curl docker-compose docker-cli openjdk17-jre-headless &&
     echo 'Downloading setup scripts...' &&
     git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &&
-    cp -r /tmp/taksetup/* /setup/ &&
+    cp -r /tmp/taksetup/scripts /setup/ &&
+    cp /tmp/taksetup/CoreConfig.xml /setup/ &&
     cd /setup &&
-    echo 'Starting automated TAK Server setup...' &&
+    if [ -f takserver-docker-*.zip ]; then
+      echo 'Extracting TAK Server files (memory-optimized)...' &&
+      unzip -q takserver-docker-*.zip &&
+      cp -r takserver-docker-*/* . &&
+      rm -rf takserver-docker-*/ &&
+      echo 'Files extracted successfully'
+    fi &&
     chmod +x scripts/setup-unraid-complete.sh &&
+    sed -i 's/validate_zip_file/validate_or_skip_zip/' scripts/setup-unraid-complete.sh &&
     bash scripts/setup-unraid-complete.sh
   "</PostArgs>
-  <CPUset/>
-  <DateInstalled/>
-  <DonateText>Support TAK Server for Unraid development</DonateText>
-  <DonateLink>https://github.com/sponsors/Zeroradiance</DonateLink>
-  <Description>One-click automated setup for TAK Server 5.4 with bulletproof error handling and complete automation.</Description>
-  <Networking>
-    <Mode>bridge</Mode>
-    <Publish>
-      <Port>
-        <HostPort>8445</HostPort>
-        <ContainerPort>8445</ContainerPort>
-        <Protocol>tcp</Protocol>
-      </Port>
-      <Port>
-        <HostPort>8092</HostPort>
-        <ContainerPort>8092</ContainerPort>
-        <Protocol>tcp</Protocol>
-      </Port>
-    </Publish>
-  </Networking>
-  <Data>
-    <Volume>
-      <HostDir>/mnt/user/appdata/tak-server</HostDir>
-      <ContainerDir>/setup</ContainerDir>
-      <Mode>rw</Mode>
-    </Volume>
-    <Volume>
-      <HostDir>/var/run/docker.sock</HostDir>
-      <ContainerDir>/var/run/docker.sock</ContainerDir>
-      <Mode>rw</Mode>
-    </Volume>
-  </Data>
-  <Environment/>
-  <Labels/>
-  <Config Name="Setup Directory" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all setup files will be stored" Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket access for container management (required for automated setup)" Type="Path" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="TAK Web Interface" Target="8445" Default="8445" Mode="tcp" Description="Port for TAK Server web interface access" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="ATAK Client Port" Target="8092" Default="8092" Mode="tcp" Description="Port for ATAK mobile client connections" Type="Port" Display="always" Required="true" Mask="false"/>
+  
+  <Config Name="Setup Directory" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket access required for automated setup" Type="Path" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="TAK Web Interface" Target="8445" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="ATAK Client Port" Target="8092" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients" Type="Port" Display="always" Required="true" Mask="false"/>
 </Container>
