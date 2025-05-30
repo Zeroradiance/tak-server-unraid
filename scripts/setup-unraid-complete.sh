@@ -127,22 +127,60 @@ extract_and_setup_files() {
     docker-compose down 2>/dev/null || true
     rm -rf tak docker takserver-docker-* 2>/dev/null || true
     
+    # Get the ZIP file (using the path that was validated)
+    local zip_file="$TAK_ZIP_FILE"
+    echo -e "${YELLOW}Using ZIP file: $zip_file${NC}"
+    
+    # Verify file exists and is readable
+    if [ ! -f "$zip_file" ]; then
+        echo -e "${RED}Error: ZIP file not found at $zip_file${NC}"
+        exit 1
+    fi
+    
+    if [ ! -r "$zip_file" ]; then
+        echo -e "${RED}Error: ZIP file not readable. Fixing permissions...${NC}"
+        chmod 644 "$zip_file"
+    fi
+    
+    # Test ZIP file integrity first
+    echo -e "${YELLOW}Testing ZIP file integrity...${NC}"
+    if ! unzip -t "$zip_file" >/dev/null 2>&1; then
+        echo -e "${RED}Error: ZIP file appears to be corrupted${NC}"
+        exit 1
+    fi
+    
     # Create temporary directory for extraction
     local temp_dir="/tmp/takserver-$$"
     mkdir -p "$temp_dir"
     
-    # Extract TAK server using absolute path
-    echo -e "${YELLOW}Extracting ZIP file: $TAK_ZIP_FILE${NC}"
-    if ! unzip -q "$TAK_ZIP_FILE" -d "$temp_dir"; then
-        echo -e "${RED}Error: Failed to extract ZIP file${NC}"
-        rm -rf "$temp_dir"
-        exit 1
+    # Extract with verbose error handling
+    echo -e "${YELLOW}Extracting ZIP file...${NC}"
+    if ! unzip -q "$zip_file" -d "$temp_dir" 2>/dev/null; then
+        # Try alternative extraction methods
+        echo -e "${YELLOW}Standard unzip failed, trying alternative methods...${NC}"
+        
+        # Try with different unzip options
+        if ! unzip -o "$zip_file" -d "$temp_dir" 2>/dev/null; then
+            # Try copying to temp location first
+            local temp_zip="/tmp/takserver-temp-$$.zip"
+            cp "$zip_file" "$temp_zip"
+            chmod 644 "$temp_zip"
+            
+            if ! unzip -q "$temp_zip" -d "$temp_dir" 2>/dev/null; then
+                echo -e "${RED}Error: All extraction methods failed${NC}"
+                rm -rf "$temp_dir" "$temp_zip"
+                exit 1
+            fi
+            rm -f "$temp_zip"
+        fi
     fi
     
     # Find extracted directory
     local extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "takserver-docker-*" | head -1)
     if [ -z "$extracted_dir" ]; then
         echo -e "${RED}Error: Failed to find extracted TAK server directory.${NC}"
+        echo -e "${YELLOW}Contents of temp directory:${NC}"
+        ls -la "$temp_dir"
         rm -rf "$temp_dir"
         exit 1
     fi
