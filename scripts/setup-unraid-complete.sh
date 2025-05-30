@@ -34,9 +34,8 @@ handle_error() {
 cleanup_on_failure() {
     echo -e "${YELLOW}Cleaning up failed installation...${NC}"
     docker-compose down 2>/dev/null || true
-    rm -rf tak 2>/dev/null || true
-    rm -rf docker 2>/dev/null || true
-    rm -rf takserver-docker-* 2>/dev/null || true
+    rm -rf tak docker 2>/dev/null || true
+    find . -maxdepth 1 -type d -name "takserver-docker-*" -exec rm -rf {} + 2>/dev/null || true
 }
 
 # Set up error trapping
@@ -123,9 +122,10 @@ generate_secure_passwords() {
 extract_and_setup_files() {
     echo -e "${BLUE}Extracting and setting up TAK Server files...${NC}"
     
-    # Clean up any previous installations
+    # Clean up any previous installations (but NOT the ZIP file)
     docker-compose down 2>/dev/null || true
-    rm -rf tak docker takserver-docker-* 2>/dev/null || true
+    rm -rf tak docker 2>/dev/null || true
+    find . -maxdepth 1 -type d -name "takserver-docker-*" -exec rm -rf {} + 2>/dev/null || true
     
     # Get the ZIP file (using the path that was validated)
     local zip_file="$TAK_ZIP_FILE"
@@ -496,40 +496,4 @@ display_completion_message() {
     echo -e "${BLUE}📁 Certificate files created:${NC}"
     echo -e "${BLUE}  • Admin certificate: tak/certs/files/admin.p12 (import to browser)${NC}"
     echo -e "${BLUE}  • User1 data package: tak/certs/files/user1.zip (for ATAK clients)${NC}"
-    echo -e "${BLUE}  • Root CA: tak/certs/files/ca.pem${NC}"
-    echo -e "${BLUE}  • JKS Keystore: tak/certs/files/takserver.jks${NC}"
-    echo -e "${BLUE}  • JKS Truststore: tak/certs/files/truststore-root.jks${NC}"
-    echo ""
-    echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
-    echo -e "${GREEN}📝 Import admin.p12 certificate to your browser and navigate to https://$SERVER_IP:8445${NC}"
-    echo ""
-    echo -e "${BLUE}📚 For help and documentation, visit:${NC}"
-    echo -e "${BLUE}   https://github.com/Zeroradiance/tak-server-unraid${NC}"
-}
-
-# Main execution flow
-main() {
-    echo -e "${GREEN}TAK Server 5.4 Complete Setup Script for Unraid${NC}"
-    echo -e "${GREEN}Bulletproof version with comprehensive error handling${NC}"
-    echo -e "${GREEN}Sponsored by CloudRF.com - \"The API for RF\"${NC}"
-    echo ""
-    
-    validate_tools
-    validate_zip_file
-    validate_ports
-    generate_secure_passwords
-    extract_and_setup_files
-    update_docker_compose
-    configure_tak_server
-    validate_configuration
-    generate_certificates
-    convert_to_jks
-    start_containers
-    wait_for_startup
-    setup_admin_user
-    final_validation
-    display_completion_message
-}
-
-# Run main function
-main "$@"
+    echo -e "${BLUE}  • Root CA: tak/certs/files/ca.
