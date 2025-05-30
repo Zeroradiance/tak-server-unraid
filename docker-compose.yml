@@ -20,6 +20,15 @@ services:
         if [ "$$AUTO_SETUP" = "true" ] && [ -f /setup/takserver-docker-*.zip ]; then
           echo "Setting up TAK Server..."
           cd /setup
+          
+          # Extract on host if memory issues occur
+          if [ ! -d tak ] || [ ! -d docker ]; then
+            echo "Extracting TAK Server files..."
+            unzip -q takserver-docker-*.zip
+            cp -r takserver-docker-*/* .
+            rm -rf takserver-docker-*/
+          fi
+          
           chmod +x scripts/setup-unraid-complete.sh
           bash ./scripts/setup-unraid-complete.sh
         else
@@ -30,7 +39,44 @@ services:
       '
     restart: "no"
 
+  db:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.takserver-db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - tak_data:/opt/tak
+    networks:
+      tak:
+        aliases:
+          - tak-database
+    restart: unless-stopped
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    
+  tak:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.takserver
+    volumes:
+      - tak_data:/opt/tak
+    ports:
+      - "${WEB_PORT:-8445}:8443"
+      - "${API_PORT:-8446}:8444"
+      - "${STREAM_PORT:-8447}:8446"
+      - "${CLIENT_PORT:-8092}:8089"
+      - "${FED_PORT:-9003}:9000"
+      - "${IGNITE_PORT:-9004}:9001"
+    networks:
+      tak:
+    depends_on:
+      - db
+      - setup
+    restart: unless-stopped
+
 volumes:
+  db_data:
   tak_data:
     
 networks:
