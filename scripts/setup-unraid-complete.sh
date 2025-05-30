@@ -351,13 +351,33 @@ IP.1 = $SERVER_IP")
 convert_to_jks() {
     echo -e "${BLUE}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
     
+    # Ensure we're in the right directory
+    cd /setup
     local cert_path="$(pwd)/tak/certs/files"
     
-    # Run OpenJDK container to create JKS files
+    # Debug: Check if files exist before conversion
+    echo -e "${YELLOW}Checking certificate files...${NC}"
+    ls -la tak/certs/files/
+    
+    if [ ! -f "tak/certs/files/takserver.key" ]; then
+        echo -e "${RED}Error: takserver.key not found at tak/certs/files/takserver.key${NC}"
+        exit 1
+    fi
+    
+    if [ ! -f "tak/certs/files/takserver.pem" ]; then
+        echo -e "${RED}Error: takserver.pem not found at tak/certs/files/takserver.pem${NC}"
+        exit 1
+    fi
+    
+    echo -e "${YELLOW}Certificate files found, proceeding with JKS conversion...${NC}"
+    
+    # Run OpenJDK container to create JKS files with correct paths
     if ! docker run --rm -v "$cert_path":/certs openjdk:17-slim bash -c "
         cd /certs && 
+        echo 'Contents of /certs:' && ls -la &&
         apt update >/dev/null 2>&1 && apt install -y openssl >/dev/null 2>&1 &&
         
+        # Make sure we're working with the files in the current directory
         openssl pkcs12 -export -out takserver.p12 \
             -inkey takserver.key -in takserver.pem -certfile ca.pem \
             -password pass:$CERT_PASSWORD &&
@@ -370,7 +390,10 @@ convert_to_jks() {
         keytool -import -trustcacerts -file ca.pem -alias tak-ca \
             -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt &&
         
-        cp truststore-root.jks fed-truststore.jks
+        cp truststore-root.jks fed-truststore.jks &&
+        
+        # Show success confirmation
+        echo 'JKS files created successfully:' && ls -la *.jks
     "; then
         echo -e "${RED}Error: JKS certificate conversion failed${NC}"
         exit 1
