@@ -21,6 +21,7 @@ DB_PASSWORD=""
 CERT_PASSWORD="atakatak"
 SERVER_ID=""
 DOCKER_PATH=""
+COMMUNITY_APP_MODE=false
 
 # Error handling function
 handle_error() {
@@ -33,7 +34,9 @@ handle_error() {
 # Cleanup function for failed setups
 cleanup_on_failure() {
     echo -e "${YELLOW}Cleaning up failed installation...${NC}"
-    docker-compose down 2>/dev/null || true
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        docker-compose down 2>/dev/null || true
+    fi
     rm -rf tak docker 2>/dev/null || true
     find . -maxdepth 1 -type d -name "takserver-docker-*" -exec rm -rf {} + 2>/dev/null || true
 }
@@ -150,7 +153,9 @@ extract_and_setup_files() {
     fi
     
     # Clean up any previous installations (but NOT the ZIP file)
-    docker-compose down 2>/dev/null || true
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        docker-compose down 2>/dev/null || true
+    fi
     rm -rf tak docker 2>/dev/null || true
     find . -maxdepth 1 -type d -name "takserver-docker-*" -exec rm -rf {} + 2>/dev/null || true
     
@@ -244,6 +249,7 @@ update_docker_compose() {
     
     # Check if docker-compose.yml exists (docker-compose mode vs Community Application mode)
     if [ -f "docker-compose.yml" ]; then
+        COMMUNITY_APP_MODE=false
         # Update docker-compose.yml to match detected structure
         if [ "$DOCKER_PATH" = "./docker/" ]; then
             sed -i 's|dockerfile: ./docker/amd64/|dockerfile: ./docker/|g' docker-compose.yml
@@ -252,6 +258,7 @@ update_docker_compose() {
         echo -e "${GREEN}✓ docker-compose.yml updated${NC}"
     else
         # Community Application mode - no docker-compose.yml needed
+        COMMUNITY_APP_MODE=true
         echo -e "${YELLOW}Community Application mode - skipping docker-compose.yml update${NC}"
         echo -e "${GREEN}✓ Configuration ready for container deployment${NC}"
     fi
@@ -403,13 +410,19 @@ convert_to_jks() {
         -destkeystore takserver.jks -deststoretype JKS -deststorepass $CERT_PASSWORD \
         -alias 1 -destalias takserver -noprompt
     
-    # Create truststore
+    # Create truststore (skip if exists to avoid duplicate error)
     echo -e "${YELLOW}Creating JKS truststore...${NC}"
-    keytool -import -trustcacerts -file ca.pem -alias tak-ca \
-        -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt
+    if [ ! -f "truststore-root.jks" ]; then
+        keytool -import -trustcacerts -file ca.pem -alias tak-ca \
+            -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt
+    else
+        echo -e "${YELLOW}Truststore already exists, skipping duplicate creation${NC}"
+    fi
     
-    # Copy truststore for federation
-    cp truststore-root.jks fed-truststore.jks
+    # Copy truststore for federation (skip if exists)
+    if [ ! -f "fed-truststore.jks" ]; then
+        cp truststore-root.jks fed-truststore.jks
+    fi
     
     echo -e "${GREEN}✓ JKS certificates created successfully${NC}"
     echo -e "${YELLOW}JKS files created:${NC}"
@@ -425,86 +438,124 @@ convert_to_jks() {
 start_containers() {
     echo -e "${BLUE}Building and starting TAK server containers...${NC}"
     
-    if ! docker-compose up -d; then
-        echo -e "${RED}Error: Failed to start containers${NC}"
-        echo -e "${RED}Check logs with: docker-compose logs${NC}"
-        exit 1
+    # Check if we're in docker-compose mode or Community Application mode
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        # Docker-compose mode - start via compose
+        if ! docker-compose up -d; then
+            echo -e "${RED}Error: Failed to start containers${NC}"
+            echo -e "${RED}Check logs with: docker-compose logs${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ Containers started successfully${NC}"
+    else
+        # Community Application mode - provide instructions
+        echo -e "${YELLOW}Community Application mode - TAK Server files prepared${NC}"
+        echo -e "${GREEN}✓ All setup files created successfully${NC}"
+        echo -e "${BLUE}To deploy TAK Server containers:${NC}"
+        echo -e "${BLUE}  1. Copy docker-compose.yml to this directory${NC}"
+        echo -e "${BLUE}  2. Run: docker-compose up -d${NC}"
+        echo -e "${BLUE}  3. Monitor with: docker-compose logs -f${NC}"
     fi
-    
-    echo -e "${GREEN}✓ Containers started successfully${NC}"
 }
 
 wait_for_startup() {
-    echo -e "${BLUE}Waiting for TAK Server to fully initialize...${NC}"
+    echo -e "${BLUE}Checking container startup...${NC}"
     
-    # Wait for containers to be running
-    for i in {1..30}; do
-        if docker-compose ps | grep -q "Up"; then
-            break
-        fi
-        if [ $i -eq 30 ]; then
-            echo -e "${RED}Error: Containers failed to start within 5 minutes${NC}"
-            docker-compose logs
-            exit 1
-        fi
-        echo -e "${YELLOW}Waiting for containers to start... ($i/30)${NC}"
-        sleep 10
-    done
-    
-    # Get container name dynamically
-    local container_name=$(docker-compose ps | grep tak | grep -v db | awk '{print $1}' | head -1)
-    
-    # Wait for TAK Server web interface
-    echo -e "${BLUE}Waiting for TAK Server web interface to start...${NC}"
-    for i in {1..60}; do
-        if docker exec "$container_name" netstat -tulpn 2>/dev/null | grep -q ":8443"; then
-            echo -e "${GREEN}✓ TAK Server web interface is listening on port 8443!${NC}"
-            break
-        fi
-        if [ $i -eq 60 ]; then
-            echo -e "${RED}Error: TAK Server web interface failed to start within 10 minutes${NC}"
-            echo -e "${RED}Check logs with: docker logs $container_name${NC}"
-            exit 1
-        fi
-        echo -e "${YELLOW}Waiting for web interface... ($i/60)${NC}"
-        sleep 10
-    done
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        # Docker-compose mode - wait for containers
+        # Wait for containers to be running
+        for i in {1..30}; do
+            if docker-compose ps | grep -q "Up"; then
+                break
+            fi
+            if [ $i -eq 30 ]; then
+                echo -e "${RED}Error: Containers failed to start within 5 minutes${NC}"
+                docker-compose logs
+                exit 1
+            fi
+            echo -e "${YELLOW}Waiting for containers to start... ($i/30)${NC}"
+            sleep 10
+        done
+        
+        # Get container name dynamically
+        local container_name=$(docker-compose ps | grep tak | grep -v db | awk '{print $1}' | head -1)
+        
+        # Wait for TAK Server web interface
+        echo -e "${BLUE}Waiting for TAK Server web interface to start...${NC}"
+        for i in {1..60}; do
+            if docker exec "$container_name" netstat -tulpn 2>/dev/null | grep -q ":8443"; then
+                echo -e "${GREEN}✓ TAK Server web interface is listening on port 8443!${NC}"
+                break
+            fi
+            if [ $i -eq 60 ]; then
+                echo -e "${RED}Error: TAK Server web interface failed to start within 10 minutes${NC}"
+                echo -e "${RED}Check logs with: docker logs $container_name${NC}"
+                exit 1
+            fi
+            echo -e "${YELLOW}Waiting for web interface... ($i/60)${NC}"
+            sleep 10
+        done
+    else
+        # Community Application mode - skip container wait
+        echo -e "${YELLOW}Community Application mode - container startup verification skipped${NC}"
+        echo -e "${GREEN}✓ Setup completed - ready for manual deployment${NC}"
+    fi
 }
 
 setup_admin_user() {
     echo -e "${BLUE}Setting up admin user...${NC}"
     
-    local container_name=$(docker-compose ps -q tak)
-    if [ -n "$container_name" ]; then
-        # Give TAK server more time to fully initialize
-        sleep 30
-        
-        if docker exec "$container_name" bash -c "
-            cd /opt/tak && 
-            timeout 30 java -jar utils/UserManager.jar usermod -A -p '$ADMIN_PASSWORD' admin
-        " 2>/dev/null; then
-            echo -e "${GREEN}✓ Admin user configured successfully${NC}"
-        else
-            echo -e "${YELLOW}Admin user will be created on next restart${NC}"
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        # Docker-compose mode - configure admin user
+        local container_name=$(docker-compose ps -q tak)
+        if [ -n "$container_name" ]; then
+            # Give TAK server more time to fully initialize
+            sleep 30
+            
+            if docker exec "$container_name" bash -c "
+                cd /opt/tak && 
+                timeout 30 java -jar utils/UserManager.jar usermod -A -p '$ADMIN_PASSWORD' admin
+            " 2>/dev/null; then
+                echo -e "${GREEN}✓ Admin user configured successfully${NC}"
+            else
+                echo -e "${YELLOW}Admin user will be created on next restart${NC}"
+            fi
         fi
+    else
+        # Community Application mode - admin user setup instructions
+        echo -e "${YELLOW}Community Application mode - admin user setup deferred${NC}"
+        echo -e "${BLUE}Admin user will be configured when containers are deployed${NC}"
     fi
 }
 
 final_validation() {
     echo -e "${BLUE}Performing final validation...${NC}"
     
-    # Test connectivity
-    if curl -k -s --connect-timeout 5 https://$SERVER_IP:8445 >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ TAK Server is responding on port 8445!${NC}"
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        # Docker-compose mode - test connectivity
+        if curl -k -s --connect-timeout 5 https://$SERVER_IP:8445 >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ TAK Server is responding on port 8445!${NC}"
+        else
+            echo -e "${YELLOW}TAK Server may still be initializing. This is normal for first startup.${NC}"
+        fi
     else
-        echo -e "${YELLOW}TAK Server may still be initializing. This is normal for first startup.${NC}"
+        # Community Application mode - validate files only
+        echo -e "${YELLOW}Community Application mode - validating setup files${NC}"
     fi
     
-    # Verify certificate files exist
+    # Verify certificate files exist (same for both modes)
     if [ -f "tak/certs/files/admin.p12" ] && [ -f "tak/certs/files/takserver.jks" ]; then
         echo -e "${GREEN}✓ All certificate files created successfully${NC}"
     else
         echo -e "${RED}Error: Certificate files missing${NC}"
+        exit 1
+    fi
+    
+    # Verify configuration files
+    if [ -f "tak/CoreConfig.xml" ] && [ -d "docker" ]; then
+        echo -e "${GREEN}✓ All configuration files ready${NC}"
+    else
+        echo -e "${RED}Error: Configuration files missing${NC}"
         exit 1
     fi
 }
@@ -524,8 +575,23 @@ display_completion_message() {
     echo ""
     echo -e "${YELLOW}SAVE THESE PASSWORDS - THEY WILL NOT BE SHOWN AGAIN!${NC}"
     echo ""
-    echo -e "${GREEN}Access your TAK Server at: https://$SERVER_IP:8445${NC}"
-    echo ""
+    
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        # Docker-compose mode - full access information
+        echo -e "${GREEN}Access your TAK Server at: https://$SERVER_IP:8445${NC}"
+        echo ""
+        echo -e "${BLUE}TAK Server is running and accessible!${NC}"
+    else
+        # Community Application mode - deployment instructions
+        echo -e "${BLUE}TAK Server files prepared for deployment at: $PWD${NC}"
+        echo ""
+        echo -e "${YELLOW}To complete deployment:${NC}"
+        echo -e "${YELLOW}  1. Copy the docker-compose.yml from the repository to this directory${NC}"
+        echo -e "${YELLOW}  2. Run: docker-compose up -d${NC}"
+        echo -e "${YELLOW}  3. Access at: https://$SERVER_IP:8445${NC}"
+        echo ""
+    fi
+    
     echo -e "${BLUE}Certificate files created:${NC}"
     echo -e "${BLUE}  Admin certificate: tak/certs/files/admin.p12 (import to browser)${NC}"
     echo -e "${BLUE}  User1 data package: tak/certs/files/user1.zip (for ATAK clients)${NC}"
@@ -534,7 +600,13 @@ display_completion_message() {
     echo -e "${BLUE}  JKS Truststore: tak/certs/files/truststore-root.jks${NC}"
     echo ""
     echo -e "${GREEN}Setup completed successfully!${NC}"
-    echo -e "${GREEN}Import admin.p12 certificate to your browser and navigate to https://$SERVER_IP:8445${NC}"
+    
+    if [ "$COMMUNITY_APP_MODE" = false ]; then
+        echo -e "${GREEN}Import admin.p12 certificate to your browser and navigate to https://$SERVER_IP:8445${NC}"
+    else
+        echo -e "${GREEN}Deploy containers and import admin.p12 certificate to your browser${NC}"
+    fi
+    
     echo ""
     echo -e "${BLUE}For help and documentation, visit:${NC}"
     echo -e "${BLUE}   https://github.com/Zeroradiance/tak-server-unraid${NC}"
