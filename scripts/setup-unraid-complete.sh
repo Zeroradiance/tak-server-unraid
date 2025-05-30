@@ -13,6 +13,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Global variables
+TAK_ZIP_FILE=""
+SERVER_IP=""
+ADMIN_PASSWORD=""
+DB_PASSWORD=""
+CERT_PASSWORD="atakatak"
+SERVER_ID=""
+DOCKER_PATH=""
+
 # Error handling function
 handle_error() {
     echo -e "${RED}ERROR on line $1: Command failed with exit code $2${NC}" >&2
@@ -27,6 +36,7 @@ cleanup_on_failure() {
     docker-compose down 2>/dev/null || true
     rm -rf tak 2>/dev/null || true
     rm -rf docker 2>/dev/null || true
+    rm -rf takserver-docker-* 2>/dev/null || true
 }
 
 # Set up error trapping
@@ -47,7 +57,11 @@ validate_tools() {
 
 validate_zip_file() {
     echo -e "${BLUE}Validating TAK Server ZIP file...${NC}"
+    
+    # Find ZIP file using multiple methods
+    local zip_file=""
     zip_file=$(find . -maxdepth 1 -name "takserver-docker-*.zip" | head -1)
+    
     if [ -z "$zip_file" ]; then
         echo -e "${RED}Error: No TAK Server ZIP file found in current directory.${NC}"
         echo -e "${RED}Please download takserver-docker-5.4-RELEASE-XX.zip from tak.gov${NC}"
@@ -55,15 +69,17 @@ validate_zip_file() {
         exit 1
     fi
     
+    # Get absolute path to avoid any path issues
+    TAK_ZIP_FILE=$(realpath "$zip_file")
+    
     # Test ZIP file integrity
-    if ! unzip -t "$zip_file" &>/dev/null; then
+    if ! unzip -t "$TAK_ZIP_FILE" &>/dev/null; then
         echo -e "${RED}Error: ZIP file appears to be corrupted.${NC}"
         echo -e "${RED}Please re-download the TAK Server release.${NC}"
         exit 1
     fi
     
-    echo -e "${GREEN}✓ Found valid TAK Server file: $zip_file${NC}"
-    export TAK_ZIP_FILE="$zip_file"
+    echo -e "${GREEN}✓ Found valid TAK Server file: $TAK_ZIP_FILE${NC}"
 }
 
 validate_ports() {
@@ -91,18 +107,15 @@ generate_secure_passwords() {
     echo -e "${BLUE}Generating TAK-compliant secure passwords...${NC}"
     
     # Generate admin password (15+ chars with all requirements)
-    admin_base=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 8)
-    export ADMIN_PASSWORD="TakAdmin2025!@#${admin_base}X9"
+    local admin_base=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 8)
+    ADMIN_PASSWORD="TakAdmin2025!@#${admin_base}X9"
     
     # Generate database password (20+ chars with all requirements)
-    db_base=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 12)
-    export DB_PASSWORD="TakDatabase2025\$%^${db_base}Z8!"
-    
-    # Certificate password (standard)
-    export CERT_PASSWORD="atakatak"
+    local db_base=$(openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 12)
+    DB_PASSWORD="TakDatabase2025\$%^${db_base}Z8!"
     
     # Generate unique server ID
-    export SERVER_ID=$(openssl rand -hex 16)
+    SERVER_ID=$(openssl rand -hex 16)
     
     echo -e "${GREEN}✓ Secure passwords generated${NC}"
 }
@@ -114,31 +127,40 @@ extract_and_setup_files() {
     docker-compose down 2>/dev/null || true
     rm -rf tak docker takserver-docker-* 2>/dev/null || true
     
-    # Extract TAK server
-    temp_dir="/tmp/takserver-$$"
+    # Create temporary directory for extraction
+    local temp_dir="/tmp/takserver-$$"
     mkdir -p "$temp_dir"
-    unzip -q "$TAK_ZIP_FILE" -d "$temp_dir"
     
-    extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "takserver-docker-*" | head -1)
+    # Extract TAK server using absolute path
+    echo -e "${YELLOW}Extracting ZIP file: $TAK_ZIP_FILE${NC}"
+    if ! unzip -q "$TAK_ZIP_FILE" -d "$temp_dir"; then
+        echo -e "${RED}Error: Failed to extract ZIP file${NC}"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    # Find extracted directory
+    local extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "takserver-docker-*" | head -1)
     if [ -z "$extracted_dir" ]; then
         echo -e "${RED}Error: Failed to find extracted TAK server directory.${NC}"
         rm -rf "$temp_dir"
         exit 1
     fi
     
-    # Copy files
+    # Copy TAK files
     mkdir -p tak
     cp -r "$extracted_dir"/tak/* tak/
+    echo -e "${GREEN}✓ TAK files copied${NC}"
     
     # Handle docker directory structure (auto-detect)
     if [ -d "$extracted_dir/docker/amd64" ]; then
         echo -e "${YELLOW}Detected amd64 docker structure${NC}"
         cp -r "$extracted_dir"/docker ./
-        export DOCKER_PATH="./docker/amd64/"
+        DOCKER_PATH="./docker/amd64/"
     elif [ -d "$extracted_dir/docker" ]; then
         echo -e "${YELLOW}Detected flat docker structure${NC}"
         cp -r "$extracted_dir"/docker ./
-        export DOCKER_PATH="./docker/"
+        DOCKER_PATH="./docker/"
     else
         echo -e "${RED}Error: No docker directory found in TAK Server release.${NC}"
         rm -rf "$temp_dir"
@@ -158,6 +180,7 @@ update_docker_compose() {
     # Update docker-compose.yml to match detected structure
     if [ "$DOCKER_PATH" = "./docker/" ]; then
         sed -i 's|dockerfile: ./docker/amd64/|dockerfile: ./docker/|g' docker-compose.yml
+        echo -e "${YELLOW}Updated docker-compose.yml for flat structure${NC}"
     fi
     
     echo -e "${GREEN}✓ docker-compose.yml updated${NC}"
@@ -167,24 +190,23 @@ configure_tak_server() {
     echo -e "${BLUE}Configuring TAK Server...${NC}"
     
     # Get server IP
-    server_ip=$(hostname -I | awk '{print $1}')
-    [ -z "$server_ip" ] && server_ip="127.0.0.1"
-    export SERVER_IP="$server_ip"
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    [ -z "$SERVER_IP" ] && SERVER_IP="127.0.0.1"
     
     # Copy and configure CoreConfig.xml
     cp CoreConfig.xml tak/CoreConfig.xml
     
-    # Replace ALL placeholders with actual values
-    sed -i "s/PLACEHOLDER_SERVER_ID/$SERVER_ID/g" tak/CoreConfig.xml
-    sed -i "s/PLACEHOLDER_DB_PASSWORD/$DB_PASSWORD/g" tak/CoreConfig.xml
-    sed -i "s/PLACEHOLDER_HOST_IP/$server_ip/g" tak/CoreConfig.xml
-    sed -i "s/HOSTIP/$server_ip/g" tak/CoreConfig.xml
+    # Replace ALL placeholders with actual values - using different delimiters to avoid conflicts
+    sed -i "s|PLACEHOLDER_SERVER_ID|$SERVER_ID|g" tak/CoreConfig.xml
+    sed -i "s|PLACEHOLDER_DB_PASSWORD|$DB_PASSWORD|g" tak/CoreConfig.xml
+    sed -i "s|PLACEHOLDER_HOST_IP|$SERVER_IP|g" tak/CoreConfig.xml
+    sed -i "s|HOSTIP|$SERVER_IP|g" tak/CoreConfig.xml
     
     # Add network bindings for Docker (critical for container access)
-    sed -i 's/<input _name="stdssl" protocol="tls" port="8089"\/>/<input _name="stdssl" protocol="tls" port="8089" host="0.0.0.0"\/>/g' tak/CoreConfig.xml
-    sed -i 's/<connector port="8443" _name="https"\/>/<connector port="8443" _name="https" host="0.0.0.0"\/>/g' tak/CoreConfig.xml
-    sed -i 's/<connector port="8444" useFederationTruststore="true" _name="fed_https"\/>/<connector port="8444" useFederationTruststore="true" _name="fed_https" host="0.0.0.0"\/>/g' tak/CoreConfig.xml
-    sed -i 's/<connector port="8446" clientAuth="false" _name="cert_https"\/>/<connector port="8446" clientAuth="false" _name="cert_https" host="0.0.0.0"\/>/g' tak/CoreConfig.xml
+    sed -i 's|<input _name="stdssl" protocol="tls" port="8089"/>|<input _name="stdssl" protocol="tls" port="8089" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8443" _name="https"/>|<connector port="8443" _name="https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8444" useFederationTruststore="true" _name="fed_https"/>|<connector port="8444" useFederationTruststore="true" _name="fed_https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8446" clientAuth="false" _name="cert_https"/>|<connector port="8446" clientAuth="false" _name="cert_https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
     
     echo -e "${GREEN}✓ TAK Server configuration completed${NC}"
 }
@@ -221,11 +243,11 @@ generate_certificates() {
     mkdir -p files CA intermediate
     
     # Certificate variables
-    COUNTRY="US"
-    STATE="California"
-    CITY="San Francisco"
-    ORGANIZATION="TAK"
-    ORGANIZATIONAL_UNIT="TAK-Server"
+    local COUNTRY="US"
+    local STATE="California"
+    local CITY="San Francisco"
+    local ORGANIZATION="TAK"
+    local ORGANIZATIONAL_UNIT="TAK-Server"
     
     # Generate Root CA
     echo -e "${YELLOW}Creating root certificate authority...${NC}"
@@ -291,7 +313,7 @@ IP.1 = $SERVER_IP")
 convert_to_jks() {
     echo -e "${BLUE}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
     
-    cert_path="$(pwd)/tak/certs/files"
+    local cert_path="$(pwd)/tak/certs/files"
     
     # Run OpenJDK container to create JKS files
     if ! docker run --rm -v "$cert_path":/certs openjdk:17-slim bash -c "
@@ -358,16 +380,19 @@ wait_for_startup() {
         sleep 10
     done
     
+    # Get container name dynamically
+    local container_name=$(docker-compose ps | grep tak | grep -v db | awk '{print $1}' | head -1)
+    
     # Wait for TAK Server web interface
     echo -e "${BLUE}Waiting for TAK Server web interface to start...${NC}"
     for i in {1..60}; do
-        if docker exec tak-server-unraid-tak-1 netstat -tulpn 2>/dev/null | grep -q ":8443"; then
+        if docker exec "$container_name" netstat -tulpn 2>/dev/null | grep -q ":8443"; then
             echo -e "${GREEN}✓ TAK Server web interface is listening on port 8443!${NC}"
             break
         fi
         if [ $i -eq 60 ]; then
             echo -e "${RED}Error: TAK Server web interface failed to start within 10 minutes${NC}"
-            echo -e "${RED}Check logs with: docker logs tak-server-unraid-tak-1${NC}"
+            echo -e "${RED}Check logs with: docker logs $container_name${NC}"
             exit 1
         fi
         echo -e "${YELLOW}Waiting for web interface... ($i/60)${NC}"
@@ -378,7 +403,7 @@ wait_for_startup() {
 setup_admin_user() {
     echo -e "${BLUE}Setting up admin user...${NC}"
     
-    container_name=$(docker-compose ps -q tak)
+    local container_name=$(docker-compose ps -q tak)
     if [ -n "$container_name" ]; then
         # Give TAK server more time to fully initialize
         sleep 30
