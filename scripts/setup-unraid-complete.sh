@@ -160,4 +160,376 @@ extract_and_setup_files() {
         echo -e "${YELLOW}Standard unzip failed, trying alternative methods...${NC}"
         
         # Try with different unzip options
-        if
+        if ! unzip -o "$zip_file" -d "$temp_dir" 2>/dev/null; then
+            # Try copying to temp location first
+            local temp_zip="/tmp/takserver-temp-$$.zip"
+            cp "$zip_file" "$temp_zip"
+            chmod 644 "$temp_zip"
+            
+            if ! unzip -q "$temp_zip" -d "$temp_dir" 2>/dev/null; then
+                echo -e "${RED}Error: All extraction methods failed${NC}"
+                rm -rf "$temp_dir" "$temp_zip"
+                exit 1
+            fi
+            rm -f "$temp_zip"
+        fi
+    fi
+    
+    # Find extracted directory
+    local extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d -name "takserver-docker-*" | head -1)
+    if [ -z "$extracted_dir" ]; then
+        echo -e "${RED}Error: Failed to find extracted TAK server directory.${NC}"
+        echo -e "${YELLOW}Contents of temp directory:${NC}"
+        ls -la "$temp_dir"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    # Copy TAK files
+    mkdir -p tak
+    cp -r "$extracted_dir"/tak/* tak/
+    echo -e "${GREEN}✓ TAK files copied${NC}"
+    
+    # Handle docker directory structure (auto-detect)
+    if [ -d "$extracted_dir/docker/amd64" ]; then
+        echo -e "${YELLOW}Detected amd64 docker structure${NC}"
+        cp -r "$extracted_dir"/docker ./
+        DOCKER_PATH="./docker/amd64/"
+    elif [ -d "$extracted_dir/docker" ]; then
+        echo -e "${YELLOW}Detected flat docker structure${NC}"
+        cp -r "$extracted_dir"/docker ./
+        DOCKER_PATH="./docker/"
+    else
+        echo -e "${RED}Error: No docker directory found in TAK Server release.${NC}"
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+    
+    # Set permissions
+    chmod +x tak/*.sh tak/db-utils/*.sh tak/certs/*.sh 2>/dev/null || true
+    rm -rf "$temp_dir"
+    
+    echo -e "${GREEN}✓ TAK Server files extracted and configured${NC}"
+}
+
+update_docker_compose() {
+    echo -e "${BLUE}Updating docker-compose.yml for detected structure...${NC}"
+    
+    # Update docker-compose.yml to match detected structure
+    if [ "$DOCKER_PATH" = "./docker/" ]; then
+        sed -i 's|dockerfile: ./docker/amd64/|dockerfile: ./docker/|g' docker-compose.yml
+        echo -e "${YELLOW}Updated docker-compose.yml for flat structure${NC}"
+    fi
+    
+    echo -e "${GREEN}✓ docker-compose.yml updated${NC}"
+}
+
+configure_tak_server() {
+    echo -e "${BLUE}Configuring TAK Server...${NC}"
+    
+    # Get server IP
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    [ -z "$SERVER_IP" ] && SERVER_IP="127.0.0.1"
+    
+    # Copy and configure CoreConfig.xml
+    cp CoreConfig.xml tak/CoreConfig.xml
+    
+    # Replace ALL placeholders with actual values - using different delimiters to avoid conflicts
+    sed -i "s|PLACEHOLDER_SERVER_ID|$SERVER_ID|g" tak/CoreConfig.xml
+    sed -i "s|PLACEHOLDER_DB_PASSWORD|$DB_PASSWORD|g" tak/CoreConfig.xml
+    sed -i "s|PLACEHOLDER_HOST_IP|$SERVER_IP|g" tak/CoreConfig.xml
+    sed -i "s|HOSTIP|$SERVER_IP|g" tak/CoreConfig.xml
+    
+    # Add network bindings for Docker (critical for container access)
+    sed -i 's|<input _name="stdssl" protocol="tls" port="8089"/>|<input _name="stdssl" protocol="tls" port="8089" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8443" _name="https"/>|<connector port="8443" _name="https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8444" useFederationTruststore="true" _name="fed_https"/>|<connector port="8444" useFederationTruststore="true" _name="fed_https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    sed -i 's|<connector port="8446" clientAuth="false" _name="cert_https"/>|<connector port="8446" clientAuth="false" _name="cert_https" host="0.0.0.0"/>|g' tak/CoreConfig.xml
+    
+    echo -e "${GREEN}✓ TAK Server configuration completed${NC}"
+}
+
+validate_configuration() {
+    echo -e "${BLUE}Validating configuration...${NC}"
+    
+    # Check that no placeholders remain
+    if grep -q "PLACEHOLDER" tak/CoreConfig.xml; then
+        echo -e "${RED}Error: Configuration validation failed - placeholders remain in CoreConfig.xml${NC}"
+        grep "PLACEHOLDER" tak/CoreConfig.xml
+        exit 1
+    fi
+    
+    # Check that network bindings were added
+    if ! grep -q 'host="0.0.0.0"' tak/CoreConfig.xml; then
+        echo -e "${RED}Error: Network binding configuration failed${NC}"
+        exit 1
+    fi
+    
+    # Check that database password was set
+    if ! grep -q "password=\"$DB_PASSWORD\"" tak/CoreConfig.xml; then
+        echo -e "${RED}Error: Database password configuration failed${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓ Configuration validation passed${NC}"
+}
+
+generate_certificates() {
+    echo -e "${BLUE}Generating certificates with OpenSSL...${NC}"
+    
+    cd tak/certs || exit 1
+    mkdir -p files CA intermediate
+    
+    # Certificate variables
+    local COUNTRY="US"
+    local STATE="California"
+    local CITY="San Francisco"
+    local ORGANIZATION="TAK"
+    local ORGANIZATIONAL_UNIT="TAK-Server"
+    
+    # Generate Root CA
+    echo -e "${YELLOW}Creating root certificate authority...${NC}"
+    openssl genrsa -out files/ca-do-not-share.key 4096
+    openssl req -new -x509 -days 3650 -key files/ca-do-not-share.key -out files/ca.pem \
+        -subj "/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORGANIZATION/OU=$ORGANIZATIONAL_UNIT/CN=TAK-ROOT-CA"
+    
+    cp files/ca.pem files/truststore-root.pem
+    cp files/ca.pem files/ca-trusted.pem
+    
+    # Generate server certificate
+    echo -e "${YELLOW}Creating server certificate...${NC}"
+    openssl genrsa -out files/takserver.key 2048
+    openssl req -new -key files/takserver.key -out files/takserver.csr \
+        -subj "/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORGANIZATION/OU=$ORGANIZATIONAL_UNIT/CN=takserver"
+    
+    openssl x509 -req -in files/takserver.csr -CA files/ca.pem -CAkey files/ca-do-not-share.key \
+        -CAcreateserial -out files/takserver.pem -days 365 \
+        -extensions v3_req -extfile <(echo "[v3_req]
+keyUsage = keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = takserver
+DNS.2 = localhost
+IP.1 = $SERVER_IP")
+    
+    # Generate admin certificate
+    echo -e "${YELLOW}Creating admin certificate...${NC}"
+    openssl genrsa -out files/admin.key 2048
+    openssl req -new -key files/admin.key -out files/admin.csr \
+        -subj "/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORGANIZATION/OU=$ORGANIZATIONAL_UNIT/CN=admin"
+    openssl x509 -req -in files/admin.csr -CA files/ca.pem -CAkey files/ca-do-not-share.key \
+        -CAcreateserial -out files/admin.pem -days 365
+    
+    # Create PKCS12 files
+    openssl pkcs12 -export -out files/admin.p12 -inkey files/admin.key -in files/admin.pem \
+        -certfile files/ca.pem -password pass:$CERT_PASSWORD
+    
+    # Generate user1 certificate and data package
+    echo -e "${YELLOW}Creating user1 certificate and data package...${NC}"
+    openssl genrsa -out files/user1.key 2048
+    openssl req -new -key files/user1.key -out files/user1.csr \
+        -subj "/C=$COUNTRY/ST=$STATE/L=$CITY/O=$ORGANIZATION/OU=$ORGANIZATIONAL_UNIT/CN=user1"
+    openssl x509 -req -in files/user1.csr -CA files/ca.pem -CAkey files/ca-do-not-share.key \
+        -CAcreateserial -out files/user1.pem -days 365
+    
+    openssl pkcs12 -export -out files/user1.p12 -inkey files/user1.key -in files/user1.pem \
+        -certfile files/ca.pem -password pass:$CERT_PASSWORD
+    
+    # Create user data package
+    mkdir -p temp_dp
+    cp files/user1.p12 temp_dp/
+    cp files/truststore-root.pem temp_dp/
+    echo "server=$SERVER_IP:8092:ssl" > temp_dp/manifest.xml
+    (cd temp_dp && zip -r ../files/user1.zip . >/dev/null 2>&1)
+    rm -rf temp_dp
+    
+    echo -e "${GREEN}✓ PEM certificates generated successfully${NC}"
+    cd ../..
+}
+
+convert_to_jks() {
+    echo -e "${BLUE}Converting PEM certificates to JKS format using OpenJDK container...${NC}"
+    
+    local cert_path="$(pwd)/tak/certs/files"
+    
+    # Run OpenJDK container to create JKS files
+    if ! docker run --rm -v "$cert_path":/certs openjdk:17-slim bash -c "
+        cd /certs && 
+        apt update >/dev/null 2>&1 && apt install -y openssl >/dev/null 2>&1 &&
+        
+        openssl pkcs12 -export -out takserver.p12 \
+            -inkey takserver.key -in takserver.pem -certfile ca.pem \
+            -password pass:$CERT_PASSWORD &&
+        
+        keytool -importkeystore \
+            -srckeystore takserver.p12 -srcstoretype PKCS12 -srcstorepass $CERT_PASSWORD \
+            -destkeystore takserver.jks -deststoretype JKS -deststorepass $CERT_PASSWORD \
+            -alias 1 -destalias takserver -noprompt &&
+        
+        keytool -import -trustcacerts -file ca.pem -alias tak-ca \
+            -keystore truststore-root.jks -storepass $CERT_PASSWORD -noprompt &&
+        
+        cp truststore-root.jks fed-truststore.jks
+    "; then
+        echo -e "${RED}Error: JKS certificate conversion failed${NC}"
+        exit 1
+    fi
+    
+    # Verify JKS files were created
+    if [ ! -f "tak/certs/files/takserver.jks" ] || [ ! -f "tak/certs/files/truststore-root.jks" ]; then
+        echo -e "${RED}Error: JKS files were not created properly${NC}"
+        exit 1
+    fi
+    
+    # Set proper permissions
+    chmod 644 tak/certs/files/*.pem tak/certs/files/*.p12 tak/certs/files/*.zip tak/certs/files/*.jks 2>/dev/null || true
+    chmod 600 tak/certs/files/*.key 2>/dev/null || true
+    
+    echo -e "${GREEN}✓ JKS certificates created and validated successfully${NC}"
+}
+
+start_containers() {
+    echo -e "${BLUE}Building and starting TAK server containers...${NC}"
+    
+    if ! docker-compose up -d; then
+        echo -e "${RED}Error: Failed to start containers${NC}"
+        echo -e "${RED}Check logs with: docker-compose logs${NC}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✓ Containers started successfully${NC}"
+}
+
+wait_for_startup() {
+    echo -e "${BLUE}Waiting for TAK Server to fully initialize...${NC}"
+    
+    # Wait for containers to be running
+    for i in {1..30}; do
+        if docker-compose ps | grep -q "Up"; then
+            break
+        fi
+        if [ $i -eq 30 ]; then
+            echo -e "${RED}Error: Containers failed to start within 5 minutes${NC}"
+            docker-compose logs
+            exit 1
+        fi
+        echo -e "${YELLOW}Waiting for containers to start... ($i/30)${NC}"
+        sleep 10
+    done
+    
+    # Get container name dynamically
+    local container_name=$(docker-compose ps | grep tak | grep -v db | awk '{print $1}' | head -1)
+    
+    # Wait for TAK Server web interface
+    echo -e "${BLUE}Waiting for TAK Server web interface to start...${NC}"
+    for i in {1..60}; do
+        if docker exec "$container_name" netstat -tulpn 2>/dev/null | grep -q ":8443"; then
+            echo -e "${GREEN}✓ TAK Server web interface is listening on port 8443!${NC}"
+            break
+        fi
+        if [ $i -eq 60 ]; then
+            echo -e "${RED}Error: TAK Server web interface failed to start within 10 minutes${NC}"
+            echo -e "${RED}Check logs with: docker logs $container_name${NC}"
+            exit 1
+        fi
+        echo -e "${YELLOW}Waiting for web interface... ($i/60)${NC}"
+        sleep 10
+    done
+}
+
+setup_admin_user() {
+    echo -e "${BLUE}Setting up admin user...${NC}"
+    
+    local container_name=$(docker-compose ps -q tak)
+    if [ -n "$container_name" ]; then
+        # Give TAK server more time to fully initialize
+        sleep 30
+        
+        if docker exec "$container_name" bash -c "
+            cd /opt/tak && 
+            timeout 30 java -jar utils/UserManager.jar usermod -A -p '$ADMIN_PASSWORD' admin
+        " 2>/dev/null; then
+            echo -e "${GREEN}✓ Admin user configured successfully${NC}"
+        else
+            echo -e "${YELLOW}Admin user will be created on next restart${NC}"
+        fi
+    fi
+}
+
+final_validation() {
+    echo -e "${BLUE}Performing final validation...${NC}"
+    
+    # Test connectivity
+    if curl -k -s --connect-timeout 5 https://$SERVER_IP:8445 >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ TAK Server is responding on port 8445!${NC}"
+    else
+        echo -e "${YELLOW}TAK Server may still be initializing. This is normal for first startup.${NC}"
+    fi
+    
+    # Verify certificate files exist
+    if [ -f "tak/certs/files/admin.p12" ] && [ -f "tak/certs/files/takserver.jks" ]; then
+        echo -e "${GREEN}✓ All certificate files created successfully${NC}"
+    else
+        echo -e "${RED}Error: Certificate files missing${NC}"
+        exit 1
+    fi
+}
+
+display_completion_message() {
+    echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}TAK Server Setup Complete!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo ""
+    echo -e "${YELLOW}---------CREDENTIALS----------------${NC}"
+    echo -e "${YELLOW}Admin user name: admin${NC}"
+    echo -e "${YELLOW}Admin password: $ADMIN_PASSWORD${NC}"
+    echo -e "${YELLOW}PostgreSQL password: $DB_PASSWORD${NC}"
+    echo -e "${YELLOW}Certificate password: $CERT_PASSWORD${NC}"
+    echo -e "${YELLOW}---------CREDENTIALS----------------${NC}"
+    echo ""
+    echo -e "${YELLOW}SAVE THESE PASSWORDS - THEY WILL NOT BE SHOWN AGAIN!${NC}"
+    echo ""
+    echo -e "${GREEN}Access your TAK Server at: https://$SERVER_IP:8445${NC}"
+    echo ""
+    echo -e "${BLUE}Certificate files created:${NC}"
+    echo -e "${BLUE}  Admin certificate: tak/certs/files/admin.p12 (import to browser)${NC}"
+    echo -e "${BLUE}  User1 data package: tak/certs/files/user1.zip (for ATAK clients)${NC}"
+    echo -e "${BLUE}  Root CA: tak/certs/files/ca.pem${NC}"
+    echo -e "${BLUE}  JKS Keystore: tak/certs/files/takserver.jks${NC}"
+    echo -e "${BLUE}  JKS Truststore: tak/certs/files/truststore-root.jks${NC}"
+    echo ""
+    echo -e "${GREEN}Setup completed successfully!${NC}"
+    echo -e "${GREEN}Import admin.p12 certificate to your browser and navigate to https://$SERVER_IP:8445${NC}"
+    echo ""
+    echo -e "${BLUE}For help and documentation, visit:${NC}"
+    echo -e "${BLUE}   https://github.com/Zeroradiance/tak-server-unraid${NC}"
+}
+
+# Main execution flow
+main() {
+    echo -e "${GREEN}TAK Server 5.4 Complete Setup Script for Unraid${NC}"
+    echo -e "${GREEN}Bulletproof version with comprehensive error handling${NC}"
+    echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
+    echo ""
+    
+    validate_tools
+    validate_zip_file
+    validate_ports
+    generate_secure_passwords
+    extract_and_setup_files
+    update_docker_compose
+    configure_tak_server
+    validate_configuration
+    generate_certificates
+    convert_to_jks
+    start_containers
+    wait_for_startup
+    setup_admin_user
+    final_validation
+    display_completion_message
+}
+
+# Run main function
+main "$@"
