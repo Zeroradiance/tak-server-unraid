@@ -1,38 +1,69 @@
+version: '3.8'
+
 services:
+  setup:
+    image: alpine:latest
+    volumes:
+      - ./:/setup
+      - tak_data:/opt/tak
+    environment:
+      - AUTO_SETUP=${AUTO_SETUP:-true}
+      - TAK_ORG=${TAK_ORG:-TAK}
+      - TAK_STATE=${TAK_STATE:-California}
+      - TAK_CITY=${TAK_CITY:-San Francisco}
+    command: |
+      sh -c '
+        if [ "$$AUTO_SETUP" = "true" ] && [ -f /setup/takserver-docker-*.zip ]; then
+          echo "Setting up TAK Server..."
+          cd /setup
+          chmod +x scripts/setup-unraid-complete.sh
+          ./scripts/setup-unraid-complete.sh
+        else
+          echo "Waiting for manual setup or ZIP file..."
+          sleep infinity
+        fi
+      '
+    restart: "no"
+
   db:
     build:
       context: .
-      dockerfile: ./docker/amd64/Dockerfile.takserver-db
+      dockerfile: ./docker/Dockerfile.takserver-db
     volumes:
-      - "db_data:/var/lib/postgresql/data:z"
-      - "/mnt/user/appdata/tak-server-unraid/tak:/opt/tak:z"
+      - db_data:/var/lib/postgresql/data
+      - tak_data:/opt/tak
     networks:
       tak:
         aliases:
           - tak-database
     restart: unless-stopped
+    depends_on:
+      setup:
+        condition: service_completed_successfully
     
   tak:
     build:
       context: .
-      dockerfile: ./docker/amd64/Dockerfile.takserver
+      dockerfile: ./docker/Dockerfile.takserver
     volumes:
-      - "/mnt/user/appdata/tak-server-unraid/tak:/opt/tak:z"
+      - tak_data:/opt/tak
     ports:
-      - "8445:8443"
-      - "8446:8444"
-      - "8447:8446"
-      - "8092:8089"
-      - "9003:9000"
-      - "9004:9001"
+      - "${WEB_PORT:-8445}:8443"
+      - "${API_PORT:-8446}:8444"
+      - "${STREAM_PORT:-8447}:8446"
+      - "${CLIENT_PORT:-8092}:8089"
+      - "${FED_PORT:-9003}:9000"
+      - "${IGNITE_PORT:-9004}:9001"
     networks:
       tak:
     depends_on:
       - db
+      - setup
     restart: unless-stopped
 
 volumes:
   db_data:
+  tak_data:
     
 networks:
   tak:
