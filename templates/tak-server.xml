@@ -1,34 +1,43 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>tak-server</Name>
-  <Repository>zeroradiance/tak-server-unraid</Repository>
-  <Registry>https://hub.docker.com/r/zeroradiance/tak-server-unraid</Registry>
+  <Name>TAK-Server</Name>
+  <Repository>alpine:latest</Repository>
+  <Registry>https://hub.docker.com/_/alpine</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <Support>https://forums.unraid.net/topic/XXXXX-tak-server-54-for-unraid/</Support>
   <Project>https://github.com/Zeroradiance/tak-server-unraid</Project>
-  <Overview>TAK Server 5.4 is a comprehensive situational awareness platform for sharing tactical information. This template provides automated setup with proper JKS certificates, network binding fixes, and Unraid compatibility. Includes web interface for administration and supports ATAK mobile clients.</Overview>
-  <Category>Network:Management Network:Other Tools:System</Category>
+  <Overview>TAK Server 5.4 situational awareness platform with automated setup.
+
+**SETUP INSTRUCTIONS:**
+1. Download TAK Server 5.4 ZIP from https://tak.gov/products/tak-server
+2. Place ZIP file in the mapped appdata directory
+3. Container will automatically detect and setup TAK Server
+4. Monitor logs for setup progress
+5. Access web interface at https://YOUR-IP:8445 after setup
+
+**IMPORTANT:** First startup takes 5-10 minutes for complete initialization.</Overview>
+  <Category>Network:Management Tools:System</Category>
   <WebUI>https://[IP]:[PORT:8445]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
-  <PostArgs/>
-  <CPUset/>
-  <DateInstalled/>
-  <DonateText/>
-  <DonateLink/>
-  <Requires>TAK Server 5.4 release ZIP file from tak.gov - Download and place in /mnt/user/appdata/tak-server-unraid/ before running setup</Requires>
-  <Config Name="TAK Server Data" Target="/opt/tak" Default="/mnt/user/appdata/tak-server-unraid/tak" Mode="rw" Description="TAK Server data directory containing certificates, logs, and configuration" Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="Web Interface Port" Target="8443" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="API Port" Target="8444" Default="8446" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Streaming Port" Target="8446" Default="8447" Mode="tcp" Description="Port for TAK Server streaming" Type="Port" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="Client Connection Port" Target="8089" Default="8092" Mode="tcp" Description="Port for ATAK client connections" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="Federation Port" Target="9000" Default="9003" Mode="tcp" Description="Port for TAK Server federation" Type="Port" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Ignite Port" Target="9001" Default="9004" Mode="tcp" Description="Port for TAK Server Ignite" Type="Port" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Organization" Target="TAK_ORG" Default="TAK" Mode="" Description="Organization name for certificates" Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="State" Target="TAK_STATE" Default="California" Mode="" Description="State for certificates" Type="Variable" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="City" Target="TAK_CITY" Default="San Francisco" Mode="" Description="City for certificates" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <DonateText>Support the project</DonateText>
+  <DonateLink>https://github.com/sponsors/Zeroradiance</DonateLink>
+  <Requires>TAK Server 5.4 ZIP file from tak.gov in mapped directory</Requires>
+  
+  <Config Name="Application Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory for TAK Server ZIP file and setup data" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="Web Interface Port" Target="8443" Default="8445" Mode="tcp" Description="TAK Server web interface port" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Client Connection Port" Target="8089" Default="8092" Mode="tcp" Description="ATAK client connection port" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="API Port" Target="8444" Default="8446" Mode="tcp" Description="TAK Server API port" Type="Port" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Streaming Port" Target="8446" Default="8447" Mode="tcp" Description="TAK Server streaming port" Type="Port" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Federation Port" Target="9000" Default="9003" Mode="tcp" Description="Federation port" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Ignite Port" Target="9001" Default="9004" Mode="tcp" Description="Ignite service port" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  
+  <Config Name="Auto Setup" Target="AUTO_SETUP" Default="true" Mode="" Description="Automatically setup when ZIP detected" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <Config Name="Organization" Target="TAK_ORG" Default="TAK" Mode="" Description="Certificate organization name" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="State" Target="TAK_STATE" Default="California" Mode="" Description="Certificate state" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="City" Target="TAK_CITY" Default="San Francisco" Mode="" Description="Certificate city" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>
