@@ -242,13 +242,19 @@ extract_and_setup_files() {
 update_docker_compose() {
     echo -e "${BLUE}Updating docker-compose.yml for detected structure...${NC}"
     
-    # Update docker-compose.yml to match detected structure
-    if [ "$DOCKER_PATH" = "./docker/" ]; then
-        sed -i 's|dockerfile: ./docker/amd64/|dockerfile: ./docker/|g' docker-compose.yml
-        echo -e "${YELLOW}Updated docker-compose.yml for flat structure${NC}"
+    # Check if docker-compose.yml exists (docker-compose mode vs Community Application mode)
+    if [ -f "docker-compose.yml" ]; then
+        # Update docker-compose.yml to match detected structure
+        if [ "$DOCKER_PATH" = "./docker/" ]; then
+            sed -i 's|dockerfile: ./docker/amd64/|dockerfile: ./docker/|g' docker-compose.yml
+            echo -e "${YELLOW}Updated docker-compose.yml for flat structure${NC}"
+        fi
+        echo -e "${GREEN}✓ docker-compose.yml updated${NC}"
+    else
+        # Community Application mode - no docker-compose.yml needed
+        echo -e "${YELLOW}Community Application mode - skipping docker-compose.yml update${NC}"
+        echo -e "${GREEN}✓ Configuration ready for container deployment${NC}"
     fi
-    
-    echo -e "${GREEN}✓ docker-compose.yml updated${NC}"
 }
 
 configure_tak_server() {
