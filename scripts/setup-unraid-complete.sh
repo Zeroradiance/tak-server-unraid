@@ -81,6 +81,27 @@ validate_zip_file() {
     echo -e "${GREEN}✓ Found valid TAK Server file: $TAK_ZIP_FILE${NC}"
 }
 
+validate_or_skip_zip() {
+    echo -e "${BLUE}Checking TAK Server files...${NC}"
+    
+    # Check if files are already extracted (for Community Applications or pre-extracted setups)
+    if [ -d "tak" ] && [ -d "docker" ] && [ -f "tak/takserver.war" ]; then
+        echo -e "${GREEN}✓ TAK Server files already extracted and ready${NC}"
+        # Set DOCKER_PATH for pre-extracted files
+        if [ -d "docker/amd64" ]; then
+            DOCKER_PATH="./docker/amd64/"
+            echo -e "${YELLOW}Detected amd64 docker structure${NC}"
+        else
+            DOCKER_PATH="./docker/"
+            echo -e "${YELLOW}Detected flat docker structure${NC}"
+        fi
+        return 0
+    fi
+    
+    # Otherwise run normal ZIP validation
+    validate_zip_file
+}
+
 validate_ports() {
     echo -e "${BLUE}Checking port availability...${NC}"
     ports_to_check=(5432 8445 8446 8447 8092 9003 9004)
@@ -121,6 +142,12 @@ generate_secure_passwords() {
 
 extract_and_setup_files() {
     echo -e "${BLUE}Extracting and setting up TAK Server files...${NC}"
+    
+    # Skip extraction if files already exist (for pre-extracted setups)
+    if [ -d "tak" ] && [ -d "docker" ] && [ -f "tak/takserver.war" ]; then
+        echo -e "${GREEN}✓ TAK Server files already extracted, skipping extraction${NC}"
+        return 0
+    fi
     
     # Clean up any previous installations (but NOT the ZIP file)
     docker-compose down 2>/dev/null || true
@@ -515,7 +542,7 @@ main() {
     echo ""
     
     validate_tools
-    validate_zip_file
+    validate_or_skip_zip
     validate_ports
     generate_secure_passwords
     extract_and_setup_files
