@@ -13,7 +13,7 @@ services:
     command: |
       sh -c '
         echo "Installing required tools..."
-        apk add --no-cache bash unzip openssl curl docker-compose docker-cli
+        apk add --no-cache bash unzip zip openssl curl docker-compose docker-cli
         
         if [ "$$AUTO_SETUP" = "true" ] && [ -f /setup/takserver-docker-*.zip ]; then
           echo "Setting up TAK Server..."
