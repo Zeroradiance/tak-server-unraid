@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 BULLETPROOF Installation Script for Unraid
-# Fixes ALL known issues: Java, PostgreSQL 15, PGDATA, config files, credentials, plugins
+# Fixes ALL known issues: Java, PostgreSQL 15, PGDATA, config files, credentials, plugins, certificates
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -17,7 +17,7 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 BULLETPROOF Installation${NC}"
-echo -e "${GREEN}Fixing ALL known issues + Enhanced logging + Plugin support${NC}"
+echo -e "${GREEN}Complete solution: Java + PostgreSQL + Certificates + Plugins${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
@@ -123,17 +123,7 @@ echo -e "${GREEN}✓ TAK database prepared${NC}"
 CERT_PASSWORD="atakatak"
 echo "Certificate Credentials:" >> "$CRED_LOG"
 echo "- Certificate Password: $CERT_PASSWORD" >> "$CRED_LOG"
-echo "- Admin Certificate: /opt/tak/certs/files/admin.p12" >> "$CRED_LOG"
-echo "- Truststore: /opt/tak/certs/files/truststore-intermediate-ca.p12" >> "$CRED_LOG"
 echo "" >> "$CRED_LOG"
-
-# Display certificate info in logs
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}TAK SERVER CERTIFICATE CREDENTIALS:${NC}"
-echo -e "${GREEN}Certificate Password: $CERT_PASSWORD${NC}"
-echo -e "${GREEN}Admin Certificate: /opt/tak/certs/files/admin.p12${NC}"
-echo -e "${GREEN}Truststore: /opt/tak/certs/files/truststore-intermediate-ca.p12${NC}"
-echo -e "${GREEN}========================================${NC}"
 
 # Check for TAK Server files
 echo -e "${BLUE}Checking for TAK Server files...${NC}"
@@ -224,6 +214,137 @@ else
     exit 1
 fi
 
+# Complete certificate generation for admin AND user access
+echo -e "${BLUE}Generating complete TAK Server certificate set (Admin + User)...${NC}"
+
+# Update cert-metadata.sh with proper values
+if [ -f "/opt/tak/certs/cert-metadata.sh" ]; then
+    sed -i 's/COUNTRY=US/COUNTRY=US/' /opt/tak/certs/cert-metadata.sh
+    sed -i 's/STATE=/STATE=CA/' /opt/tak/certs/cert-metadata.sh
+    sed -i 's/CITY=/CITY=LA/' /opt/tak/certs/cert-metadata.sh
+    sed -i 's/ORGANIZATION=/ORGANIZATION=TAKServer/' /opt/tak/certs/cert-metadata.sh
+    sed -i 's/ORGANIZATIONAL_UNIT=/ORGANIZATIONAL_UNIT=TAK/' /opt/tak/certs/cert-metadata.sh
+    
+    echo -e "${GREEN}✓ Certificate metadata configured${NC}"
+fi
+
+# Generate certificates automatically
+cd /opt/tak/certs
+
+# Set proper ownership for certificate generation
+chown -R tak:tak /opt/tak/certs/
+
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}GENERATING COMPLETE CERTIFICATE SET${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+# 1. Generate Root CA
+echo -e "${BLUE}[1/7] Generating Root Certificate Authority...${NC}"
+sudo -u tak bash -c "cd /opt/tak/certs && echo -e '\n\n\n\n\nTAKServer\ny\n' | ./makeRootCa.sh --ca-name TAKServer"
+
+# 2. Generate server certificate
+echo -e "${BLUE}[2/7] Generating server certificate...${NC}"
+SERVER_IP=$(hostname -I | awk '{print $1}')
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh server takserver"
+
+# 3. Generate ADMIN certificates (multiple for redundancy)
+echo -e "${BLUE}[3/7] Generating ADMIN certificates...${NC}"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client admin"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client webadmin"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client administrator"
+
+# 4. Generate USER certificates (for ATAK clients)
+echo -e "${BLUE}[4/7] Generating USER certificates...${NC}"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client user"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client client1"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client client2"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client mobile"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client atak-user"
+
+# 5. Generate certificate for certificate enrollment
+echo -e "${BLUE}[5/7] Generating certificate enrollment certificate...${NC}"
+sudo -u tak bash -c "cd /opt/tak/certs && ./makeCert.sh client cert-enrollment"
+
+# 6. Set admin permissions for administrative certificates
+echo -e "${BLUE}[6/7] Setting administrative permissions...${NC}"
+if [ -f "/opt/tak/certs/files/admin.pem" ]; then
+    cd /opt/tak/utils
+    java -jar UserManager.jar certmod -A /opt/tak/certs/files/admin.pem || echo "Admin permissions set attempt completed"
+fi
+
+if [ -f "/opt/tak/certs/files/webadmin.pem" ]; then
+    cd /opt/tak/utils
+    java -jar UserManager.jar certmod -A /opt/tak/certs/files/webadmin.pem || echo "WebAdmin permissions set attempt completed"
+fi
+
+if [ -f "/opt/tak/certs/files/administrator.pem" ]; then
+    cd /opt/tak/utils
+    java -jar UserManager.jar certmod -A /opt/tak/certs/files/administrator.pem || echo "Administrator permissions set attempt completed"
+fi
+
+# 7. Set proper permissions for all certificate files
+echo -e "${BLUE}[7/7] Setting certificate file permissions...${NC}"
+chown -R tak:tak /opt/tak/certs/
+chmod 644 /opt/tak/certs/files/*.p12 2>/dev/null || true
+chmod 644 /opt/tak/certs/files/*.pem 2>/dev/null || true
+
+# Enhanced certificate verification and logging
+echo -e "${BLUE}========================================${NC}"
+echo -e "${BLUE}CERTIFICATE GENERATION COMPLETE${NC}"
+echo -e "${BLUE}========================================${NC}"
+
+if [ -d "/opt/tak/certs/files" ] && [ "$(ls -A /opt/tak/certs/files/)" ]; then
+    echo -e "${GREEN}✓ CERTIFICATES GENERATED SUCCESSFULLY!${NC}"
+    
+    # Comprehensive certificate listing
+    echo -e "${BLUE}Generated Certificate Files:${NC}"
+    ls -la /opt/tak/certs/files/
+    
+    # Log complete certificate information
+    echo "========================================" >> "$CRED_LOG"
+    echo "COMPLETE CERTIFICATE SET GENERATED" >> "$CRED_LOG"
+    echo "========================================" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    
+    echo "ADMIN CERTIFICATES (for web interface access):" >> "$CRED_LOG"
+    echo "- Admin Certificate: /opt/tak/certs/files/admin.p12" >> "$CRED_LOG"
+    echo "- WebAdmin Certificate: /opt/tak/certs/files/webadmin.p12" >> "$CRED_LOG"
+    echo "- Administrator Certificate: /opt/tak/certs/files/administrator.p12" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    
+    echo "USER CERTIFICATES (for ATAK client access):" >> "$CRED_LOG"
+    echo "- User Certificate: /opt/tak/certs/files/user.p12" >> "$CRED_LOG"
+    echo "- Client1 Certificate: /opt/tak/certs/files/client1.p12" >> "$CRED_LOG"
+    echo "- Client2 Certificate: /opt/tak/certs/files/client2.p12" >> "$CRED_LOG"
+    echo "- Mobile Certificate: /opt/tak/certs/files/mobile.p12" >> "$CRED_LOG"
+    echo "- ATAK User Certificate: /opt/tak/certs/files/atak-user.p12" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    
+    echo "CERTIFICATE PASSWORD (for all certificates): $CERT_PASSWORD" >> "$CRED_LOG"
+    echo "HOST LOCATION: /mnt/user/appdata/tak-server/tak-data/certs/files/" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    
+    echo "CERTIFICATE USAGE GUIDE:" >> "$CRED_LOG"
+    echo "========================" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    echo "ADMIN ACCESS (Web Interface):" >> "$CRED_LOG"
+    echo "1. Import admin.p12 or webadmin.p12 into Firefox/Chrome" >> "$CRED_LOG"
+    echo "2. Password: $CERT_PASSWORD" >> "$CRED_LOG"
+    echo "3. Access: https://YOUR-UNRAID-IP:8960" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    echo "USER ACCESS (ATAK Mobile Apps):" >> "$CRED_LOG"
+    echo "1. Copy user.p12, client1.p12, or mobile.p12 to mobile device" >> "$CRED_LOG"
+    echo "2. Import into ATAK app" >> "$CRED_LOG"
+    echo "3. Password: $CERT_PASSWORD" >> "$CRED_LOG"
+    echo "4. Server: ssl://YOUR-UNRAID-IP:8961" >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
+    
+else
+    echo -e "${RED}Certificate generation may have failed${NC}"
+    echo -e "${YELLOW}Check certificate directory for issues:${NC}"
+    ls -la /opt/tak/certs/
+fi
+
 # Run database schema setup
 echo -e "${BLUE}Setting up database schema...${NC}"
 cd /opt/tak
@@ -232,31 +353,6 @@ if [ -f "db-utils/SchemaManager.jar" ]; then
     java -jar db-utils/SchemaManager.jar upgrade || echo "Schema may already be up to date"
 else
     echo -e "${YELLOW}SchemaManager not found, database may need manual setup${NC}"
-fi
-
-# Enhanced certificate logging
-if [ -f "/opt/tak/certs/files/admin.p12" ]; then
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}CERTIFICATE GENERATION SUCCESSFUL!${NC}"
-    echo -e "${GREEN}========================================${NC}"
-    
-    # List all generated certificates
-    echo -e "${BLUE}Generated Certificates:${NC}"
-    ls -la /opt/tak/certs/files/ | while read line; do
-        echo -e "${BLUE}$line${NC}"
-    done
-    
-    # Show certificate details
-    echo ""
-    echo -e "${BLUE}Admin Certificate Details:${NC}"
-    echo -e "${BLUE}File: /opt/tak/certs/files/admin.p12${NC}"
-    echo -e "${BLUE}Password: $CERT_PASSWORD${NC}"
-    echo -e "${BLUE}Import this file into Firefox/Chrome to access TAK Server${NC}"
-    
-    # Log certificate generation to credential file
-    echo "Generated Certificates:" >> "$CRED_LOG"
-    ls -la /opt/tak/certs/files/ >> "$CRED_LOG"
-    echo "" >> "$CRED_LOG"
 fi
 
 # Create systemd service
@@ -325,54 +421,4 @@ echo -e "${BLUE}DATABASE ACCESS:${NC}"
 echo -e "${BLUE}- Database Name: cot${NC}"
 echo -e "${BLUE}- Username: martiuser${NC}"
 echo -e "${BLUE}- Password: $DB_PASSWORD${NC}"
-echo -e "${BLUE}- Connection: postgresql://martiuser:$DB_PASSWORD@localhost:5432/cot${NC}"
-echo ""
-
-# Certificate credentials
-echo -e "${BLUE}CERTIFICATE ACCESS:${NC}"
-echo -e "${BLUE}- Certificate Password: $CERT_PASSWORD${NC}"
-echo -e "${BLUE}- Admin Certificate: /opt/tak/certs/files/admin.p12${NC}"
-echo -e "${BLUE}- Import admin.p12 into your browser with password: $CERT_PASSWORD${NC}"
-echo ""
-
-# Web access
-echo -e "${BLUE}WEB ACCESS:${NC}"
-echo -e "${BLUE}- URL: https://YOUR-UNRAID-IP:8960${NC}"
-echo -e "${BLUE}- Authentication: Certificate-based (import admin.p12)${NC}"
-echo ""
-
-# Plugin information
-echo -e "${BLUE}PLUGIN SUPPORT:${NC}"
-echo -e "${BLUE}- Plugin Directory: /opt/tak/plugins${NC}"
-echo -e "${BLUE}- Plugin Libraries: /opt/tak/lib${NC}"
-echo -e "${BLUE}- Plugin Logs: /opt/tak/logs/plugins${NC}"
-echo ""
-
-# Save credentials to persistent file
-echo -e "${BLUE}CREDENTIALS SAVED TO:${NC}"
-echo -e "${BLUE}- Container: /opt/tak/credentials.log${NC}"
-echo -e "${BLUE}- Host: /mnt/user/appdata/tak-server/tak-data/credentials.log${NC}"
-echo ""
-
-# Copy credentials to host-accessible location
-cp "$CRED_LOG" /setup/tak-credentials.log 2>/dev/null || true
-
-echo -e "${YELLOW}========================================${NC}"
-
-# Display credential file contents in logs
-echo -e "${YELLOW}CREDENTIAL FILE CONTENTS:${NC}"
-cat "$CRED_LOG"
-echo -e "${YELLOW}========================================${NC}"
-
-chown tak:tak "$CRED_LOG"
-
-# Keep container running and monitoring TAK Server
-echo -e "${BLUE}Keeping container running and monitoring TAK Server...${NC}"
-while true; do
-    if ! pgrep -f "takserver.war" >/dev/null; then
-        echo -e "${YELLOW}TAK Server process not found, attempting restart...${NC}"
-        cd /opt/tak
-        sudo -u tak java -Xms2g -Xmx4g -jar takserver.war &
-    fi
-    sleep 60
-done
+echo -e "${BLUE}- Connection: postgresql://martiuser:
