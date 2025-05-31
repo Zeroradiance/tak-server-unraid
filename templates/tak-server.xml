@@ -1,61 +1,61 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>TAK-Server-5.4-Automated-Setup</Name>
+  <Name>TAK-Server-5.4-All-in-One</Name>
   <Repository>alpine:latest</Repository>
   <Registry>https://hub.docker.com/_/alpine</Registry>
   <Network>bridge</Network>
   <MyIP/>
   <Shell>bash</Shell>
-  <Privileged>true</Privileged>
+  <Privileged>false</Privileged>
   <Support>https://forums.unraid.net/topic/XXXXX-tak-server-54-automated-setup/</Support>
   <Project>https://github.com/Zeroradiance/tak-server-unraid</Project>
-  <Overview>TAK Server 5.4 One-Click Automated Setup for Unraid
+  <Overview>TAK Server 5.4 All-in-One Container for Unraid
 
-**SIMPLE AUTOMATED SETUP:**
+**SIMPLE ONE-CONTAINER SETUP:**
 1. Download TAK Server 5.4 ZIP from https://tak.gov/products/tak-server
 2. Place the ZIP file in /mnt/user/appdata/tak-server
-3. Start this container - completely automated setup begins
-4. Monitor container logs for progress and generated credentials
-5. Copy docker-compose.yml to setup directory and run: docker-compose up -d
-6. Access TAK Server at https://YOUR-IP:8445
+3. Start this container - complete TAK Server runs inside
+4. Monitor container logs for credentials and startup
+5. Access TAK Server at https://YOUR-IP:8445
 
 **FEATURES:**
-✓ Bulletproof automated setup with comprehensive error handling
-✓ Memory-optimized extraction process (solves Exit Code 137)
-✓ Automatic JKS certificate generation (required for TAK 5.4)
-✓ Network binding fixes for Docker compatibility
-✓ Complete validation and secure credential generation
-✓ Automatic Community Application mode detection
+✓ Single container solution (no docker-compose complexity)
+✓ Memory-optimized extraction process
+✓ Automatic JKS certificate generation
+✓ Built-in PostgreSQL database
+✓ Complete TAK Server with web interface
+✓ Automatic startup and configuration
 
-**AFTER SETUP:**
-This container prepares all TAK Server files, certificates, and configuration. After completion, copy the docker-compose.yml from the GitHub repository to the setup directory and run docker-compose up -d to deploy TAK Server.</Overview>
+**ADVANTAGES:**
+✓ No multiple container dependencies
+✓ No volume mounting issues
+✓ No container orchestration problems
+✓ Perfect for Unraid Community Applications</Overview>
   <Category>Tools:System Network:Management</Category>
   <WebUI>https://[IP]:[PORT:8445]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-single.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
-  <ExtraParams>--rm</ExtraParams>
+  <ExtraParams/>
   <PostArgs>sh -c "
-    echo 'TAK Server 5.4 Automated Setup Starting...' &&
-    apk add --no-cache bash git unzip zip openssl curl docker-compose docker-cli openjdk17-jre-headless &&
-    echo 'Downloading setup scripts...' &&
-    git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &&
-    cp -r /tmp/taksetup/scripts /setup/ &&
-    cp /tmp/taksetup/CoreConfig.xml /setup/ &&
-    cp /tmp/taksetup/docker-compose.yml /setup/ &&
-    cd /setup &&
+    echo 'TAK Server 5.4 All-in-One Starting...' &amp;&amp;
+    apk add --no-cache bash git unzip zip openssl curl openjdk17-jre-headless postgresql postgresql-contrib &amp;&amp;
+    echo 'Downloading setup scripts...' &amp;&amp;
+    git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &amp;&amp;
+    cp -r /tmp/taksetup/scripts /setup/ &amp;&amp;
+    cp /tmp/taksetup/CoreConfig.xml /setup/ &amp;&amp;
+    cd /setup &amp;&amp;
     if [ -f takserver-docker-*.zip ]; then
-      echo 'Extracting TAK Server files (memory-optimized)...' &&
-      unzip -q takserver-docker-*.zip &&
-      cp -r takserver-docker-*/* . &&
-      rm -rf takserver-docker-*/ &&
-      echo 'Files extracted successfully'
-    fi &&
-    chmod +x scripts/setup-unraid-complete.sh &&
-    bash scripts/setup-unraid-complete.sh
+      echo 'Extracting TAK Server files...' &amp;&amp;
+      unzip -q takserver-docker-*.zip &amp;&amp;
+      cp -r takserver-docker-*/* . &amp;&amp;
+      rm -rf takserver-docker-*/
+    fi &amp;&amp;
+    chmod +x scripts/setup-unraid-single.sh &amp;&amp;
+    exec scripts/setup-unraid-single.sh
   "</PostArgs>
   
-  <Config Name="Setup Directory" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all files will be prepared" Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="Docker Socket" Target="/var/run/docker.sock" Default="/var/run/docker.sock" Mode="rw" Description="Docker socket access required for automated setup" Type="Path" Display="advanced" Required="true" Mask="false"/>
-  <Config Name="TAK Web Interface" Target="8445" Default="8445" Mode="tcp" Description="Port for TAK Server web interface (after docker-compose deployment)" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="ATAK Client Port" Target="8092" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients (after docker-compose deployment)" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all data is stored" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="TAK Web Interface" Target="8443" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="ATAK Client Port" Target="8089" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Database Port" Target="5432" Default="5433" Mode="tcp" Description="Port for PostgreSQL database" Type="Port" Display="advanced" Required="true" Mask="false"/>
 </Container>
