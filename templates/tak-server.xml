@@ -36,23 +36,7 @@
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-single.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
   <ExtraParams/>
-  <PostArgs>sh -c "
-    echo 'TAK Server 5.4 All-in-One Starting...' &amp;&amp;
-    apk add --no-cache bash git unzip zip openssl curl openjdk17-jre-headless postgresql postgresql-contrib &amp;&amp;
-    echo 'Downloading setup scripts...' &amp;&amp;
-    git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &amp;&amp;
-    cp -r /tmp/taksetup/scripts /setup/ &amp;&amp;
-    cp /tmp/taksetup/CoreConfig.xml /setup/ &amp;&amp;
-    cd /setup &amp;&amp;
-    if [ -f takserver-docker-*.zip ]; then
-      echo 'Extracting TAK Server files...' &amp;&amp;
-      unzip -q takserver-docker-*.zip &amp;&amp;
-      cp -r takserver-docker-*/* . &amp;&amp;
-      rm -rf takserver-docker-*/
-    fi &amp;&amp;
-    chmod +x scripts/setup-unraid-single.sh &amp;&amp;
-    exec scripts/setup-unraid-single.sh
-  "</PostArgs>
+  <PostArgs>sh -c "echo 'TAK Server 5.4 All-in-One Starting...' &amp;&amp; apk add --no-cache bash git unzip zip openssl curl openjdk17-jre-headless postgresql postgresql-contrib &amp;&amp; echo 'Downloading setup scripts...' &amp;&amp; git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &amp;&amp; cp -r /tmp/taksetup/scripts /setup/ &amp;&amp; cp /tmp/taksetup/CoreConfig.xml /setup/ &amp;&amp; cd /setup &amp;&amp; if [ -f takserver-docker-*.zip ]; then echo 'Extracting TAK Server files...' &amp;&amp; unzip -q takserver-docker-*.zip &amp;&amp; cp -r takserver-docker-*/* . &amp;&amp; rm -rf takserver-docker-*/; fi &amp;&amp; chmod +x scripts/setup-unraid-single.sh &amp;&amp; exec scripts/setup-unraid-single.sh"</PostArgs>
   
   <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all data is stored" Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="TAK Web Interface" Target="8443" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
