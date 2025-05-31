@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 InstallTAK DEB Wrapper for Unraid Containers
-# Uses InstallTAK in DEB mode instead of Docker mode
+# Uses InstallTAK in DEB mode with PostgreSQL 15 repository
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -18,7 +18,7 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 InstallTAK DEB Container Setup${NC}"
-echo -e "${GREEN}Using InstallTAK in DEB mode (not Docker mode)${NC}"
+echo -e "${GREEN}Using InstallTAK in DEB mode with PostgreSQL 15${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
@@ -35,9 +35,21 @@ apt-get install -y \
     init \
     dialog \
     unzip \
-    zip
+    zip \
+    gnupg2 \
+    lsb-release
 
 echo -e "${GREEN}✓ Dependencies installed${NC}"
+
+# Add PostgreSQL official repository (CRITICAL FIX!)
+echo -e "${BLUE}Adding PostgreSQL 15 repository...${NC}"
+wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+
+# Update package lists to include PostgreSQL 15
+apt-get update -qq
+
+echo -e "${GREEN}✓ PostgreSQL 15 repository added${NC}"
 
 # Clone InstallTAK repository
 echo -e "${BLUE}Downloading InstallTAK script...${NC}"
@@ -84,7 +96,7 @@ else
     echo -e "${RED}Warning: deb_policy.pol not found${NC}"
 fi
 
-# Copy GPG key file if it exists - THIS WAS THE MISSING PIECE!
+# Copy GPG key file if it exists
 if [ -f "takserver-public-gpg.key" ]; then
     cp "takserver-public-gpg.key" /opt/installTAK/
     echo -e "${GREEN}✓ GPG key file found and copied${NC}"
@@ -92,6 +104,15 @@ else
     echo -e "${RED}Error: takserver-public-gpg.key not found${NC}"
     echo -e "${RED}Files in /setup:${NC}"
     ls -la /setup/
+    exit 1
+fi
+
+# Verify PostgreSQL 15 is now available
+echo -e "${BLUE}Verifying PostgreSQL 15 availability...${NC}"
+if apt-cache show postgresql-15 >/dev/null 2>&1; then
+    echo -e "${GREEN}✓ PostgreSQL 15 is available for installation${NC}"
+else
+    echo -e "${RED}Error: PostgreSQL 15 still not available${NC}"
     exit 1
 fi
 
