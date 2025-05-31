@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>TAK-Server-5.4-Ubuntu</Name>
+  <Repository>ubuntu:22.04</Repository>
+  <Registry>https://hub.docker.com/_/ubuntu</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://forums.unraid.net/topic/XXXXX-tak-server-54-ubuntu-automated-setup/</Support>
+  <Project>https://github.com/Zeroradiance/tak-server-unraid</Project>
+  <Overview>TAK Server 5.4 Ubuntu Container for Unraid
+
+**RELIABLE UBUNTU-BASED SOLUTION:**
+1. Download TAK Server 5.4 ZIP from https://tak.gov/products/tak-server
+2. Place the ZIP file in /mnt/user/appdata/tak-server
+3. Start this container - complete TAK Server runs inside
+4. Monitor container logs for credentials and startup
+5. Access TAK Server at https://YOUR-IP:8445
+
+**FEATURES:**
+✓ Ubuntu 22.04 LTS base (reliable and stable)
+✓ Built-in PostgreSQL with systemd management
+✓ Full OpenJDK 17 installation
+✓ Automatic certificate generation (PEM and JKS)
+✓ Complete TAK Server with web interface
+✓ Real-time startup monitoring and logging
+✓ 5-minute startup timeout for large deployments
+
+**ADVANTAGES:**
+✓ Standard Linux commands and tools
+✓ Reliable PostgreSQL service management
+✓ Better Java compatibility and debugging
+✓ No Alpine-specific compatibility issues
+✓ Perfect for production deployments</Overview>
+  <Category>Tools:System Network:Management</Category>
+  <WebUI>https://[IP]:[PORT:8445]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-ubuntu.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
+  <ExtraParams>--init</ExtraParams>
+  <PostArgs>bash -c "echo 'TAK Server 5.4 Ubuntu Starting...' && apt-get update -qq && apt-get install -y git wget curl && echo 'Downloading setup scripts...' && git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup && cp -r /tmp/taksetup/scripts /setup/ && cp /tmp/taksetup/CoreConfig.xml /setup/ && cd /setup && chmod +x scripts/setup-ubuntu.sh && exec scripts/setup-ubuntu.sh"</PostArgs>
+  
+  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server ZIP file should be placed and where all data is stored" Type="Path" Display="always" Required="true" Mask="false"/>
+  <Config Name="TAK Web Interface" Target="8443" Default="8445" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="ATAK Client Port" Target="8089" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="Database Port" Target="5432" Default="5433" Mode="tcp" Description="Port for PostgreSQL database" Type="Port" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="TAK Federation Port" Target="8444" Default="8444" Mode="tcp" Description="Port for TAK Server federation (advanced)" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="TAK Certificate Port" Target="8446" Default="8446" Mode="tcp" Description="Port for certificate management (advanced)" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Container Memory Limit" Target="" Default="4096" Mode="" Description="Container memory limit in MB (minimum 4GB recommended)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="TAK Server Timezone" Target="TZ" Default="America/New_York" Mode="" Description="Timezone for TAK Server (e.g., America/New_York, Europe/London)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+</Container>
