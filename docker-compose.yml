@@ -1,50 +1,70 @@
-version: '3.8'
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>TAK-Server-InstallTAK</Name>
+  <Repository>ubuntu:22.04</Repository>
+  <Registry>https://hub.docker.com/_/ubuntu</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>bash</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://forums.unraid.net/topic/XXXXX-tak-server-installtak/</Support>
+  <Project>https://github.com/myTeckNetCode/installTAK</Project>
+  <Overview>TAK Server 5.4 using InstallTAK Script for Unraid
 
-services:
-  tak-server:
-    image: ubuntu:22.04
-    container_name: tak-server-ubuntu
-    restart: unless-stopped
-    ports:
-      - "8445:8443"   # TAK Server Web Interface
-      - "8092:8089"   # ATAK Client Port
-      - "5433:5432"   # PostgreSQL Database
-      - "8444:8444"   # Federation Port (optional)
-      - "8446:8446"   # Certificate Management (optional)
-    volumes:
-      - ./appdata/tak-server:/setup
-    environment:
-      - TZ=America/New_York
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-        reservations:
-          memory: 2G
-    command: >
-      bash -c "
-        echo 'TAK Server 5.4 Ubuntu Starting...' &&
-        apt-get update -qq &&
-        apt-get install -y git wget curl &&
-        echo 'Downloading setup scripts...' &&
-        git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &&
-        cp -r /tmp/taksetup/scripts /setup/ &&
-        cp /tmp/taksetup/CoreConfig.xml /setup/ &&
-        cd /setup &&
-        chmod +x scripts/setup-ubuntu.sh &&
-        exec scripts/setup-ubuntu.sh
-      "
-    healthcheck:
-      test: ["CMD", "curl", "-f", "-k", "https://localhost:8443"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 300s
+**BULLETPROOF INSTALLATION:**
+1. Download TAK Server 5.4 DEB from https://tak.gov/products/tak-server
+2. Download required files: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol
+3. Place all files in /mnt/user/appdata/tak-server
+4. Start container - Fixed script handles ALL known issues automatically
+5. Access TAK Server at https://YOUR-IP:8960
 
-networks:
-  default:
-    driver: bridge
+**REQUIRED FILES:**
+✓ takserver_5.4-RELEASE-XX_all.deb (main package)
+✓ takserver-public-gpg.key (GPG verification key)
+✓ deb_policy.pol (policy file)
 
-volumes:
-  tak-data:
-    driver: local
+**FEATURES:**
+✓ Enhanced credential logging - All passwords displayed in logs
+✓ Plugin support with proper directory structure
+✓ Automatic Java 17 JDK installation
+✓ PostgreSQL 15 setup with proper PGDATA configuration
+✓ Pre-creates all required users and directories
+✓ Professional certificate generation with logged passwords
+✓ Built-in database schema setup
+✓ Volume mapping for data persistence
+✓ Native Ubuntu DEB installation
+
+**FIXES APPLIED:**
+✓ Java dependency issues resolved upfront
+✓ PostgreSQL version mismatch fixed
+✓ Missing config files created automatically
+✓ PGDATA environment properly configured
+✓ All known InstallTAK issues addressed
+✓ Robust error handling and recovery
+✓ Enhanced credential tracking and display
+✓ Plugin directory structure pre-configured
+
+**CREDENTIALS:**
+✓ All passwords clearly displayed in container logs
+✓ Database credentials: martiuser/atakatak
+✓ Certificate password: atakatak  
+✓ Credentials saved to persistent file</Overview>
+  <Category>Tools: Network:Management</Category>
+  <WebUI>https://[IP]:[PORT:8960]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-installtak.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
+  <ExtraParams>--init --privileged</ExtraParams>
+  <PostArgs>bash -c "apt-get update &amp;&amp; apt-get install -y git wget curl &amp;&amp; git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/setup &amp;&amp; chmod +x /tmp/setup/scripts/setup-installtak-fixed.sh &amp;&amp; exec /tmp/setup/scripts/setup-installtak-fixed.sh"</PostArgs>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Description>TAK Server 5.4 using bulletproof InstallTAK script with enhanced logging, plugin support, and all known issues fixed</Description>
+  
+  <Config Name="TAK Server Setup Files" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server DEB files should be placed: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
+  <Config Name="TAK Server Data" Target="/opt/tak" Default="/mnt/user/appdata/tak-server/tak-data" Mode="rw" Description="TAK Server data directory (certificates, logs, configuration, plugins)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server/tak-data</Config>
+  <Config Name="TAK Web Interface" Target="8443" Default="8960" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false">8960</Config>
+  <Config Name="ATAK Client Port" Target="8089" Default="8961" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false">8961</Config>
+  <Config Name="API Port" Target="8080" Default="8962" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="false" Mask="false">8962</Config>
+  <Config Name="Federation Port" Target="9000" Default="8963" Mode="tcp" Description="Port for TAK Server federation" Type="Port" Display="advanced" Required="false" Mask="false">8963</Config>
+  <Config Name="Certificate Port" Target="8446" Default="8964" Mode="tcp" Description="Port for certificate enrollment" Type="Port" Display="advanced" Required="false" Mask="false">8964</Config>
+</Container>
