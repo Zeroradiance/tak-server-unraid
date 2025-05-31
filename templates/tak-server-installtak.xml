@@ -11,34 +11,50 @@
   <Project>https://github.com/myTeckNetCode/installTAK</Project>
   <Overview>TAK Server 5.4 using InstallTAK Script for Unraid
 
-**BULLETPROOF INSTALLATION:**
+**BULLETPROOF INSTALLATION WITH COMPLETE CERTIFICATE SUITE:**
 1. Download TAK Server 5.4 DEB from https://tak.gov/products/tak-server
 2. Download required files: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol
 3. Place all files in /mnt/user/appdata/tak-server
-4. Start container - Fixed script handles ALL known issues automatically
-5. Access TAK Server at https://YOUR-IP:8960
+4. Start container - Script handles EVERYTHING automatically
+5. Access TAK Server at https://YOUR-IP:8960 with auto-generated certificates
 
 **REQUIRED FILES:**
 ✓ takserver_5.4-RELEASE-XX_all.deb (main package)
 ✓ takserver-public-gpg.key (GPG verification key)
 ✓ deb_policy.pol (policy file)
 
-**FEATURES:**
-✓ Uses proven InstallTAK script with comprehensive fixes
+**AUTOMATIC FEATURES:**
+✓ Complete admin + user certificate generation
+✓ Enhanced credential logging - All passwords displayed in logs
+✓ Plugin support with proper directory structure
 ✓ Automatic Java 17 JDK installation
 ✓ PostgreSQL 15 setup with proper PGDATA configuration
 ✓ Pre-creates all required users and directories
-✓ Professional certificate generation
 ✓ Built-in database schema setup
+✓ Volume mapping for data persistence
 ✓ Native Ubuntu DEB installation
+
+**GENERATED CERTIFICATES:**
+✓ Admin certificates: admin.p12, webadmin.p12, administrator.p12
+✓ User certificates: user.p12, client1.p12, client2.p12, mobile.p12, atak-user.p12
+✓ Server certificates for SSL/TLS
+✓ Certificate enrollment capabilities
+✓ All certificates use password: atakatak
 
 **FIXES APPLIED:**
 ✓ Java dependency issues resolved upfront
 ✓ PostgreSQL version mismatch fixed
 ✓ Missing config files created automatically
 ✓ PGDATA environment properly configured
+✓ Complete certificate generation automated
 ✓ All known InstallTAK issues addressed
-✓ Robust error handling and recovery</Overview>
+✓ Robust error handling and recovery
+
+**READY TO USE:**
+✓ Import admin.p12 (password: atakatak) into Firefox/Chrome for web access
+✓ Use user certificates for ATAK mobile clients
+✓ Access https://YOUR-IP:8960 immediately after installation
+✓ All certificates available at /mnt/user/appdata/tak-server/tak-data/certs/files/</Overview>
   <Category>Tools: Network:Management</Category>
   <WebUI>https://[IP]:[PORT:8960]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-installtak.xml</TemplateURL>
@@ -48,9 +64,10 @@
   <CPUset/>
   <DonateText/>
   <DonateLink/>
-  <Description>TAK Server 5.4 using bulletproof InstallTAK script with all known issues fixed</Description>
+  <Description>TAK Server 5.4 with complete automated setup including admin and user certificate generation</Description>
   
-  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server DEB files should be placed: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
+  <Config Name="TAK Server Setup Files" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server DEB files should be placed: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
+  <Config Name="TAK Server Data" Target="/opt/tak" Default="/mnt/user/appdata/tak-server/tak-data" Mode="rw" Description="TAK Server data directory (certificates, logs, configuration, plugins)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server/tak-data</Config>
   <Config Name="TAK Web Interface" Target="8443" Default="8960" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false">8960</Config>
   <Config Name="ATAK Client Port" Target="8089" Default="8961" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false">8961</Config>
   <Config Name="API Port" Target="8080" Default="8962" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="false" Mask="false">8962</Config>
