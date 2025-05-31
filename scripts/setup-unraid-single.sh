@@ -123,39 +123,45 @@ extract_and_setup_files() {
 setup_postgresql() {
     echo -e "${BLUE}Setting up PostgreSQL database...${NC}"
     
-    # Initialize PostgreSQL data directory
+    # Create necessary directories
     mkdir -p "$POSTGRES_DATA_DIR"
-    chown postgres:postgres "$POSTGRES_DATA_DIR" 2>/dev/null || true
+    mkdir -p /run/postgresql
+    mkdir -p /var/log/postgresql
+    
+    # Fix ownership and permissions (Alpine Linux specific)
+    chown -R postgres:postgres "$POSTGRES_DATA_DIR" /run/postgresql /var/log/postgresql 2>/dev/null || true
+    chmod 755 /run/postgresql
     
     # Initialize database if not already done
     if [ ! -f "$POSTGRES_DATA_DIR/postgresql.conf" ]; then
         echo -e "${YELLOW}Initializing PostgreSQL database...${NC}"
-        su postgres -c "initdb -D $POSTGRES_DATA_DIR" || \
-        sudo -u postgres initdb -D "$POSTGRES_DATA_DIR" || \
-        initdb -D "$POSTGRES_DATA_DIR"
+        su postgres -c "initdb -D $POSTGRES_DATA_DIR --auth-local=trust --auth-host=md5"
     fi
     
-    # Configure PostgreSQL
+    # Configure PostgreSQL for container use
     cat >> "$POSTGRES_DATA_DIR/postgresql.conf" << EOF
 listen_addresses = 'localhost'
 port = 5432
 max_connections = 100
 shared_buffers = 128MB
+unix_socket_directories = '/run/postgresql,/tmp'
+log_destination = 'stderr'
+logging_collector = off
 EOF
 
-    # Start PostgreSQL
+    # Start PostgreSQL using pg_ctl (Alpine Linux recommended method)
     echo -e "${YELLOW}Starting PostgreSQL...${NC}"
-    su postgres -c "postgres -D $POSTGRES_DATA_DIR" &>/dev/null &
-    POSTGRES_PID=$!
+    su postgres -c "pg_ctl start -D $POSTGRES_DATA_DIR -l /var/log/postgresql/postgresql.log -w"
     
     # Wait for PostgreSQL to start
     for i in {1..30}; do
-        if pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+        if su postgres -c "pg_isready -h localhost -p 5432" >/dev/null 2>&1; then
             echo -e "${GREEN}✓ PostgreSQL started successfully${NC}"
             break
         fi
         if [ $i -eq 30 ]; then
             echo -e "${RED}Error: PostgreSQL failed to start${NC}"
+            echo -e "${RED}Check logs: cat /var/log/postgresql/postgresql.log${NC}"
             exit 1
         fi
         sleep 1
@@ -163,9 +169,9 @@ EOF
     
     # Create TAK database and user
     echo -e "${YELLOW}Creating TAK database and user...${NC}"
-    psql -h localhost -U postgres -c "CREATE DATABASE cot;" 2>/dev/null || true
-    psql -h localhost -U postgres -c "CREATE USER martiuser WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
-    psql -h localhost -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;" 2>/dev/null || true
+    su postgres -c "psql -c \"CREATE DATABASE cot;\"" 2>/dev/null || true
+    su postgres -c "psql -c \"CREATE USER martiuser WITH PASSWORD '$DB_PASSWORD';\"" 2>/dev/null || true
+    su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;\"" 2>/dev/null || true
     
     echo -e "${GREEN}✓ PostgreSQL database configured${NC}"
 }
