@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 BULLETPROOF Installation Script for Unraid
-# Fixes ALL known issues: Java, PostgreSQL 15, PGDATA, config files, etc.
+# Fixes ALL known issues: Java, PostgreSQL 15, PGDATA, config files, credentials, plugins
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -17,7 +17,7 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 BULLETPROOF Installation${NC}"
-echo -e "${GREEN}Fixing ALL known issues upfront${NC}"
+echo -e "${GREEN}Fixing ALL known issues + Enhanced logging + Plugin support${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
@@ -32,9 +32,21 @@ apt-get install -y --fix-missing \
     wget curl git sudo dialog unzip zip \
     gnupg2 lsb-release ca-certificates \
     openjdk-17-jdk openjdk-17-jre openjdk-17-jdk-headless openjdk-17-jre-headless \
-    build-essential
+    build-essential net-tools
 
 echo -e "${GREEN}✓ Core dependencies and Java 17 installed${NC}"
+
+# Enhanced credential tracking and logging
+echo -e "${BLUE}Setting up credential tracking and logging...${NC}"
+
+# Create credential log file
+CRED_LOG="/opt/tak/credentials.log"
+mkdir -p /opt/tak
+touch "$CRED_LOG"
+
+echo "========================================" >> "$CRED_LOG"
+echo "TAK Server Credentials - $(date)" >> "$CRED_LOG"
+echo "========================================" >> "$CRED_LOG"
 
 # Verify Java installation
 echo -e "${BLUE}Verifying Java installation...${NC}"
@@ -48,6 +60,8 @@ echo -e "${BLUE}Adding PostgreSQL 15 repository...${NC}"
 wget -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/postgresql.org.gpg > /dev/null
 echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 apt-get update -qq
+
+echo -e "${GREEN}✓ PostgreSQL 15 repository added${NC}"
 
 # Install PostgreSQL 15 and PostGIS
 echo -e "${BLUE}Installing PostgreSQL 15 and PostGIS...${NC}"
@@ -79,13 +93,47 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Pre-create TAK database and user (exactly as TAK Server expects)
-echo -e "${BLUE}Pre-creating TAK database and user...${NC}"
-su postgres -c "psql -c \"CREATE ROLE martiuser LOGIN ENCRYPTED PASSWORD 'md564d5850dcafc6b4ddd03040ad1260bc2' SUPERUSER INHERIT CREATEDB NOCREATEROLE;\"" 2>/dev/null || echo "User may already exist"
+# Enhanced database setup with credential logging
+echo -e "${BLUE}Creating TAK database with credential logging...${NC}"
+
+# Generate and log database password
+DB_PASSWORD="atakatak"
+echo "Database Credentials:" >> "$CRED_LOG"
+echo "- Database: cot" >> "$CRED_LOG"
+echo "- Username: martiuser" >> "$CRED_LOG"
+echo "- Password: $DB_PASSWORD" >> "$CRED_LOG"
+echo "" >> "$CRED_LOG"
+
+# Display in container logs too
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}TAK SERVER DATABASE CREDENTIALS:${NC}"
+echo -e "${GREEN}Database: cot${NC}"
+echo -e "${GREEN}Username: martiuser${NC}"
+echo -e "${GREEN}Password: $DB_PASSWORD${NC}"
+echo -e "${GREEN}========================================${NC}"
+
+# Create database with logged password
+su postgres -c "psql -c \"CREATE ROLE martiuser LOGIN ENCRYPTED PASSWORD '$DB_PASSWORD' SUPERUSER INHERIT CREATEDB NOCREATEROLE;\"" 2>/dev/null || echo "User may already exist"
 su postgres -c "createdb --owner=martiuser cot" 2>/dev/null || echo "Database may already exist"
 su postgres -c "psql -d cot -c \"CREATE EXTENSION IF NOT EXISTS postgis;\"" 2>/dev/null || true
 
 echo -e "${GREEN}✓ TAK database prepared${NC}"
+
+# Certificate password logging
+CERT_PASSWORD="atakatak"
+echo "Certificate Credentials:" >> "$CRED_LOG"
+echo "- Certificate Password: $CERT_PASSWORD" >> "$CRED_LOG"
+echo "- Admin Certificate: /opt/tak/certs/files/admin.p12" >> "$CRED_LOG"
+echo "- Truststore: /opt/tak/certs/files/truststore-intermediate-ca.p12" >> "$CRED_LOG"
+echo "" >> "$CRED_LOG"
+
+# Display certificate info in logs
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}TAK SERVER CERTIFICATE CREDENTIALS:${NC}"
+echo -e "${GREEN}Certificate Password: $CERT_PASSWORD${NC}"
+echo -e "${GREEN}Admin Certificate: /opt/tak/certs/files/admin.p12${NC}"
+echo -e "${GREEN}Truststore: /opt/tak/certs/files/truststore-intermediate-ca.p12${NC}"
+echo -e "${GREEN}========================================${NC}"
 
 # Check for TAK Server files
 echo -e "${BLUE}Checking for TAK Server files...${NC}"
@@ -108,8 +156,22 @@ echo -e "${GREEN}✓ All required files present${NC}"
 # Create tak user and directories BEFORE installation
 echo -e "${BLUE}Pre-creating TAK user and directories...${NC}"
 useradd -r -s /bin/bash -d /opt/tak -m tak 2>/dev/null || echo "User tak may already exist"
-mkdir -p /opt/tak/{config,certs,logs,lib,db-utils}
+
+# Enhanced directory creation with plugin support
+mkdir -p /opt/tak/{config,certs,logs,lib,db-utils,plugins,logs/plugins}
 chown -R tak:tak /opt/tak
+
+# Setting up TAK Server plugin support
+echo -e "${BLUE}Setting up TAK Server plugin support...${NC}"
+chown -R tak:tak /opt/tak/plugins /opt/tak/lib /opt/tak/logs/plugins
+
+echo "Plugin Configuration:" >> "$CRED_LOG"
+echo "- Plugin Directory: /opt/tak/plugins" >> "$CRED_LOG"
+echo "- Plugin Libraries: /opt/tak/lib" >> "$CRED_LOG"
+echo "- Plugin Logs: /opt/tak/logs/plugins" >> "$CRED_LOG"
+echo "" >> "$CRED_LOG"
+
+echo -e "${GREEN}✓ Plugin directories and configuration ready${NC}"
 
 # Create the missing config files that post-install expects
 echo -e "${BLUE}Creating required config files...${NC}"
@@ -123,6 +185,8 @@ chown -R tak:tak /opt/tak/config
 echo -e "${BLUE}Installing TAK Server DEB package...${NC}"
 export PGDATA="/etc/postgresql/15/main"
 export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
+export TAK_DB_PASSWORD="$DB_PASSWORD"
+export TAK_CERT_PASSWORD="$CERT_PASSWORD"
 
 # Install the DEB package
 dpkg -i "$TAK_DEB_FILE" || {
@@ -168,6 +232,31 @@ if [ -f "db-utils/SchemaManager.jar" ]; then
     java -jar db-utils/SchemaManager.jar upgrade || echo "Schema may already be up to date"
 else
     echo -e "${YELLOW}SchemaManager not found, database may need manual setup${NC}"
+fi
+
+# Enhanced certificate logging
+if [ -f "/opt/tak/certs/files/admin.p12" ]; then
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}CERTIFICATE GENERATION SUCCESSFUL!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    
+    # List all generated certificates
+    echo -e "${BLUE}Generated Certificates:${NC}"
+    ls -la /opt/tak/certs/files/ | while read line; do
+        echo -e "${BLUE}$line${NC}"
+    done
+    
+    # Show certificate details
+    echo ""
+    echo -e "${BLUE}Admin Certificate Details:${NC}"
+    echo -e "${BLUE}File: /opt/tak/certs/files/admin.p12${NC}"
+    echo -e "${BLUE}Password: $CERT_PASSWORD${NC}"
+    echo -e "${BLUE}Import this file into Firefox/Chrome to access TAK Server${NC}"
+    
+    # Log certificate generation to credential file
+    echo "Generated Certificates:" >> "$CRED_LOG"
+    ls -la /opt/tak/certs/files/ >> "$CRED_LOG"
+    echo "" >> "$CRED_LOG"
 fi
 
 # Create systemd service
@@ -216,7 +305,7 @@ for i in {1..60}; do
     sleep 2
 done
 
-# Final status
+# Enhanced final status with complete credential display
 echo ""
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}TAK Server Installation Complete!${NC}"
@@ -225,15 +314,59 @@ echo ""
 echo -e "${GREEN}Access TAK Server at: https://$(hostname -I | awk '{print $1}'):8443${NC}"
 echo -e "${GREEN}External access (Unraid): https://YOUR-UNRAID-IP:8960${NC}"
 echo ""
-echo -e "${YELLOW}Default credentials:${NC}"
-echo -e "${YELLOW}- Check TAK Server logs for auto-generated credentials${NC}"
-echo -e "${YELLOW}- Database: martiuser / (auto-generated password)${NC}"
-echo ""
-echo -e "${BLUE}TAK Server files located at: /opt/tak/${NC}"
-echo -e "${BLUE}Certificates located at: /opt/tak/certs/${NC}"
+
+# Display all credentials in logs
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}COMPLETE CREDENTIAL INFORMATION:${NC}"
+echo -e "${YELLOW}========================================${NC}"
+
+# Database credentials
+echo -e "${BLUE}DATABASE ACCESS:${NC}"
+echo -e "${BLUE}- Database Name: cot${NC}"
+echo -e "${BLUE}- Username: martiuser${NC}"
+echo -e "${BLUE}- Password: $DB_PASSWORD${NC}"
+echo -e "${BLUE}- Connection: postgresql://martiuser:$DB_PASSWORD@localhost:5432/cot${NC}"
 echo ""
 
-# Keep container running
+# Certificate credentials
+echo -e "${BLUE}CERTIFICATE ACCESS:${NC}"
+echo -e "${BLUE}- Certificate Password: $CERT_PASSWORD${NC}"
+echo -e "${BLUE}- Admin Certificate: /opt/tak/certs/files/admin.p12${NC}"
+echo -e "${BLUE}- Import admin.p12 into your browser with password: $CERT_PASSWORD${NC}"
+echo ""
+
+# Web access
+echo -e "${BLUE}WEB ACCESS:${NC}"
+echo -e "${BLUE}- URL: https://YOUR-UNRAID-IP:8960${NC}"
+echo -e "${BLUE}- Authentication: Certificate-based (import admin.p12)${NC}"
+echo ""
+
+# Plugin information
+echo -e "${BLUE}PLUGIN SUPPORT:${NC}"
+echo -e "${BLUE}- Plugin Directory: /opt/tak/plugins${NC}"
+echo -e "${BLUE}- Plugin Libraries: /opt/tak/lib${NC}"
+echo -e "${BLUE}- Plugin Logs: /opt/tak/logs/plugins${NC}"
+echo ""
+
+# Save credentials to persistent file
+echo -e "${BLUE}CREDENTIALS SAVED TO:${NC}"
+echo -e "${BLUE}- Container: /opt/tak/credentials.log${NC}"
+echo -e "${BLUE}- Host: /mnt/user/appdata/tak-server/tak-data/credentials.log${NC}"
+echo ""
+
+# Copy credentials to host-accessible location
+cp "$CRED_LOG" /setup/tak-credentials.log 2>/dev/null || true
+
+echo -e "${YELLOW}========================================${NC}"
+
+# Display credential file contents in logs
+echo -e "${YELLOW}CREDENTIAL FILE CONTENTS:${NC}"
+cat "$CRED_LOG"
+echo -e "${YELLOW}========================================${NC}"
+
+chown tak:tak "$CRED_LOG"
+
+# Keep container running and monitoring TAK Server
 echo -e "${BLUE}Keeping container running and monitoring TAK Server...${NC}"
 while true; do
     if ! pgrep -f "takserver.war" >/dev/null; then
