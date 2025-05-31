@@ -4,6 +4,7 @@
   <Repository>ubuntu:22.04</Repository>
   <Registry>https://hub.docker.com/_/ubuntu</Registry>
   <Network>bridge</Network>
+  <MyIP/>
   <Shell>bash</Shell>
   <Privileged>false</Privileged>
   <Support>https://forums.unraid.net/topic/XXXXX-tak-server-installtak/</Support>
@@ -30,17 +31,21 @@
 ✓ Proven reliability in production
 ✓ Official installation method adapted for containers
 ✓ No complex custom scripts to maintain</Overview>
-  <Category>Tools:System Network:Management</Category>
+  <Category>Tools: Network:Management</Category>
   <WebUI>https://[IP]:[PORT:8443]/</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/templates/tak-server-installtak.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Zeroradiance/tak-server-unraid/main/images/tak-server-icon.png</Icon>
   <ExtraParams>--init --privileged</ExtraParams>
   <PostArgs>bash -c "apt-get update &amp;&amp; apt-get install -y git wget curl &amp;&amp; git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/setup &amp;&amp; chmod +x /tmp/setup/scripts/setup-installtak.sh &amp;&amp; exec /tmp/setup/scripts/setup-installtak.sh"</PostArgs>
+  <CPUset/>
+  <DonateText/>
+  <DonateLink/>
+  <Description>TAK Server 5.4 using proven InstallTAK script for automated setup</Description>
   
-  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where takserver-docker-*.zip should be placed and all TAK data is stored" Type="Path" Display="always" Required="true" Mask="false"/>
-  <Config Name="TAK Web Interface" Target="8443" Default="8443" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="ATAK Client Port" Target="8089" Default="8089" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false"/>
-  <Config Name="API Port" Target="8080" Default="8080" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Federation Port" Target="9000" Default="9000" Mode="tcp" Description="Port for TAK Server federation" Type="Port" Display="advanced" Required="false" Mask="false"/>
-  <Config Name="Certificate Port" Target="8446" Default="8446" Mode="tcp" Description="Port for certificate enrollment" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where takserver-docker-*.zip should be placed and all TAK data is stored" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
+  <Config Name="TAK Web Interface" Target="8443" Default="8443" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false">8443</Config>
+  <Config Name="ATAK Client Port" Target="8089" Default="8089" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false">8089</Config>
+  <Config Name="API Port" Target="8080" Default="8080" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="false" Mask="false">8080</Config>
+  <Config Name="Federation Port" Target="9000" Default="9000" Mode="tcp" Description="Port for TAK Server federation" Type="Port" Display="advanced" Required="false" Mask="false">9000</Config>
+  <Config Name="Certificate Port" Target="8446" Default="8446" Mode="tcp" Description="Port for certificate enrollment" Type="Port" Display="advanced" Required="false" Mask="false">8446</Config>
 </Container>
