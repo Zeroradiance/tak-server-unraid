@@ -421,4 +421,65 @@ echo -e "${BLUE}DATABASE ACCESS:${NC}"
 echo -e "${BLUE}- Database Name: cot${NC}"
 echo -e "${BLUE}- Username: martiuser${NC}"
 echo -e "${BLUE}- Password: $DB_PASSWORD${NC}"
-echo -e "${BLUE}- Connection: postgresql://martiuser:
+echo -e "${BLUE}- Connection: postgresql://martiuser:$DB_PASSWORD@localhost:5432/cot${NC}"
+echo ""
+
+# Certificate credentials
+echo -e "${BLUE}CERTIFICATE ACCESS:${NC}"
+echo -e "${BLUE}ADMIN CERTIFICATES (Web Interface):${NC}"
+echo -e "${BLUE}- Admin: admin.p12${NC}"
+echo -e "${BLUE}- WebAdmin: webadmin.p12${NC}"
+echo -e "${BLUE}- Administrator: administrator.p12${NC}"
+echo ""
+echo -e "${BLUE}USER CERTIFICATES (ATAK Clients):${NC}"
+echo -e "${BLUE}- User: user.p12${NC}"
+echo -e "${BLUE}- Client1: client1.p12${NC}"
+echo -e "${BLUE}- Client2: client2.p12${NC}"
+echo -e "${BLUE}- Mobile: mobile.p12${NC}"
+echo -e "${BLUE}- ATAK User: atak-user.p12${NC}"
+echo ""
+echo -e "${BLUE}- Certificate Password (all): $CERT_PASSWORD${NC}"
+echo -e "${BLUE}- Location: /mnt/user/appdata/tak-server/tak-data/certs/files/${NC}"
+echo ""
+
+# Web access
+echo -e "${BLUE}WEB ACCESS:${NC}"
+echo -e "${BLUE}- URL: https://YOUR-UNRAID-IP:8960${NC}"
+echo -e "${BLUE}- Authentication: Certificate-based (import admin.p12)${NC}"
+echo ""
+
+# Plugin information
+echo -e "${BLUE}PLUGIN SUPPORT:${NC}"
+echo -e "${BLUE}- Plugin Directory: /opt/tak/plugins${NC}"
+echo -e "${BLUE}- Plugin Libraries: /opt/tak/lib${NC}"
+echo -e "${BLUE}- Plugin Logs: /opt/tak/logs/plugins${NC}"
+echo ""
+
+# Save credentials to persistent file
+echo -e "${BLUE}CREDENTIALS SAVED TO:${NC}"
+echo -e "${BLUE}- Container: /opt/tak/credentials.log${NC}"
+echo -e "${BLUE}- Host: /mnt/user/appdata/tak-server/tak-data/credentials.log${NC}"
+echo ""
+
+# Copy credentials to host-accessible location
+cp "$CRED_LOG" /setup/tak-credentials.log 2>/dev/null || true
+
+echo -e "${YELLOW}========================================${NC}"
+
+# Display credential file contents in logs
+echo -e "${YELLOW}CREDENTIAL FILE CONTENTS:${NC}"
+cat "$CRED_LOG"
+echo -e "${YELLOW}========================================${NC}"
+
+chown tak:tak "$CRED_LOG"
+
+# Keep container running and monitoring TAK Server
+echo -e "${BLUE}Keeping container running and monitoring TAK Server...${NC}"
+while true; do
+    if ! pgrep -f "takserver.war" >/dev/null; then
+        echo -e "${YELLOW}TAK Server process not found, attempting restart...${NC}"
+        cd /opt/tak
+        sudo -u tak java -Xms2g -Xmx4g -jar takserver.war &
+    fi
+    sleep 60
+done
