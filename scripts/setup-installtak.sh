@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 InstallTAK DEB Wrapper for Unraid Containers
-# Fixed Ubuntu mirrors and PostgreSQL service handling
+# FIXED: Set PGDATA to PostgreSQL CONFIG directory, not data directory
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -17,91 +17,70 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 InstallTAK DEB Container Setup${NC}"
-echo -e "${GREEN}Fixed Ubuntu mirrors and service handling${NC}"
+echo -e "${GREEN}FIXED: Proper PGDATA configuration for TAK Server${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
-# Fix Ubuntu repository mirrors (CRITICAL FIX!)
+# Fix Ubuntu repository mirrors
 echo -e "${BLUE}Fixing Ubuntu repository mirrors...${NC}"
 sed -i 's|http://archive.ubuntu.com/ubuntu|http://us.archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-sed -i 's|http://security.ubuntu.com/ubuntu|http://security.ubuntu.com/ubuntu|g' /etc/apt/sources.list
 
-# Add additional backup mirrors
-cat >> /etc/apt/sources.list << EOF
-# Backup mirrors to avoid 403 errors
-deb http://mirror.math.princeton.edu/pub/ubuntu/ jammy main restricted universe multiverse
-deb http://mirror.math.princeton.edu/pub/ubuntu/ jammy-updates main restricted universe multiverse
-deb http://mirror.math.princeton.edu/pub/ubuntu/ jammy-security main restricted universe multiverse
-EOF
-
-echo -e "${GREEN}✓ Ubuntu mirrors updated${NC}"
-
-# Update with fixed mirrors
-echo -e "${BLUE}Updating package lists with reliable mirrors...${NC}"
 apt-get update -qq --fix-missing || apt-get update -qq
 
-# Install basic dependencies first
+# Install core dependencies
 echo -e "${BLUE}Installing core dependencies...${NC}"
 apt-get install -y --fix-missing \
-    git \
-    wget \
-    curl \
-    sudo \
-    dialog \
-    unzip \
-    zip \
-    gnupg2 \
-    lsb-release \
-    ca-certificates
+    git wget curl sudo dialog unzip zip gnupg2 lsb-release ca-certificates
 
 echo -e "${GREEN}✓ Core dependencies installed${NC}"
 
-# Add PostgreSQL repository using proper method
+# Add PostgreSQL repository
 echo -e "${BLUE}Adding PostgreSQL 15 repository...${NC}"
 wget -O- https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/postgresql.org.gpg > /dev/null
 echo "deb https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
 
-# Update with PostgreSQL repo
 apt-get update -qq
 
 echo -e "${GREEN}✓ PostgreSQL 15 repository added${NC}"
 
-# Install PostgreSQL with explicit version
-echo -e "${BLUE}Installing PostgreSQL 15 and PostGIS...${NC}"
+# Install PostgreSQL 15
+echo -e "${BLUE}Installing PostgreSQL 15...${NC}"
 apt-get install -y --fix-missing \
     postgresql-15 \
     postgresql-15-postgis-3 \
     postgresql-client-15 \
-    postgresql-contrib-15 \
-    postgresql-15-postgis-3-scripts
+    postgresql-contrib-15
 
 echo -e "${GREEN}✓ PostgreSQL 15 installed${NC}"
 
-# Set up PGDATA and start PostgreSQL properly
-echo -e "${BLUE}Configuring PostgreSQL environment...${NC}"
-export PGDATA="/var/lib/postgresql/15/main"
-echo "export PGDATA=/var/lib/postgresql/15/main" >> /etc/environment
+# CRITICAL FIX: Set PGDATA to CONFIG directory (what TAK Server expects!)
+echo -e "${BLUE}Configuring PGDATA for TAK Server...${NC}"
+export PGDATA="/etc/postgresql/15/main"  # CONFIG directory, not data!
+echo "export PGDATA=/etc/postgresql/15/main" >> /etc/environment
+echo "export PGDATA=/etc/postgresql/15/main" >> /etc/profile
 
-# Start PostgreSQL using pg_ctl directly (more reliable in containers)
-echo -e "${BLUE}Starting PostgreSQL 15...${NC}"
-su postgres -c "pg_ctl start -D /var/lib/postgresql/15/main -l /var/log/postgresql/postgresql-15-main.log" || true
+echo -e "${GREEN}✓ PGDATA set to CONFIG directory: $PGDATA${NC}"
 
-# Alternative: try service command
+# Start PostgreSQL and ensure it's configured
+echo -e "${BLUE}Starting and configuring PostgreSQL...${NC}"
 service postgresql start || true
 
-# Wait and verify PostgreSQL is running
+# Wait for PostgreSQL to be ready
 for i in {1..30}; do
     if su postgres -c "pg_isready -p 5432" >/dev/null 2>&1; then
         echo -e "${GREEN}✓ PostgreSQL 15 is running${NC}"
         break
     fi
-    if [ $i -eq 30 ]; then
-        echo -e "${YELLOW}PostgreSQL may not be running, but continuing...${NC}"
-        # Show PostgreSQL status for debugging
-        su postgres -c "pg_ctl status -D /var/lib/postgresql/15/main" || true
-    fi
     sleep 1
 done
+
+# Create TAK database and user (do this BEFORE installing TAK Server)
+echo -e "${BLUE}Creating TAK database and user...${NC}"
+su postgres -c "createdb cot" 2>/dev/null || true
+su postgres -c "psql -c \"CREATE USER martiuser WITH PASSWORD 'atakatak' SUPERUSER;\"" 2>/dev/null || true
+su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;\"" 2>/dev/null || true
+
+echo -e "${GREEN}✓ TAK database prepared${NC}"
 
 # Clone InstallTAK repository
 echo -e "${BLUE}Downloading InstallTAK script...${NC}"
@@ -139,46 +118,71 @@ else
     exit 1
 fi
 
-# Set environment variables for InstallTAK
-echo -e "${BLUE}Setting up environment for InstallTAK...${NC}"
-export PGDATA="/var/lib/postgresql/15/main"
+# Set critical environment variables for InstallTAK
+echo -e "${BLUE}Setting environment for InstallTAK...${NC}"
+export PGDATA="/etc/postgresql/15/main"  # CONFIG directory!
 export DEBIAN_FRONTEND=noninteractive
+export IS_DOCKER=true
 
-# Run InstallTAK with retries on package failures
-echo -e "${BLUE}Running InstallTAK script...${NC}"
+echo "PGDATA is set to: $PGDATA"
+echo "Contents of PGDATA directory:"
+ls -la "$PGDATA" || echo "PGDATA directory not found"
+
+# Run InstallTAK script
+echo -e "${BLUE}Running InstallTAK script with correct PGDATA...${NC}"
 echo -e "${YELLOW}This may take 10-15 minutes...${NC}"
 
 cd /opt/installTAK
+./installTAK "$(basename "$TAK_DEB_FILE")"
 
-# Run with fallback for package errors
-./installTAK "$(basename "$TAK_DEB_FILE")" || {
-    echo -e "${YELLOW}InstallTAK encountered errors, trying with --fix-missing...${NC}"
-    apt-get install -f --fix-missing -y
-    ./installTAK "$(basename "$TAK_DEB_FILE")"
-}
-
-# Check final status
-echo -e "${BLUE}Checking TAK Server status...${NC}"
-
-# Try multiple ways to check/start TAK Server
-if service takserver status >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ TAK Server is running${NC}"
-elif /opt/tak/takserver.sh status >/dev/null 2>&1; then
-    echo -e "${GREEN}✓ TAK Server is running${NC}"
-else
-    echo -e "${YELLOW}Starting TAK Server manually...${NC}"
-    service takserver start || /opt/tak/takserver.sh start || true
+# If TAK Server package failed to configure, try manual fix
+if dpkg -l | grep takserver | grep -q "iF"; then
+    echo -e "${YELLOW}TAK Server package needs reconfiguration...${NC}"
+    
+    # Create missing directories if needed
+    mkdir -p /opt/tak/config
+    
+    # Try to reconfigure the package
+    dpkg --configure takserver || {
+        echo -e "${YELLOW}Manual configuration needed...${NC}"
+        
+        # Create basic TAK Server structure if missing
+        mkdir -p /opt/tak/{config,certs,logs,lib}
+        chown -R tak:tak /opt/tak 2>/dev/null || true
+        
+        # Try reconfigure again
+        dpkg --configure takserver || true
+    }
 fi
 
-echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}TAK Server Setup Complete!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo ""
-echo -e "${GREEN}Access TAK Server at: https://$(hostname -I | awk '{print $1}'):8443${NC}"
-echo ""
+# Final status check
+echo -e "${BLUE}Checking TAK Server status...${NC}"
+
+if [ -d "/opt/tak" ] && [ -f "/opt/tak/takserver.war" ]; then
+    echo -e "${GREEN}✓ TAK Server files are present${NC}"
+    
+    # Try to start TAK Server manually if service didn't start
+    if ! service takserver status >/dev/null 2>&1; then
+        echo -e "${YELLOW}Starting TAK Server manually...${NC}"
+        cd /opt/tak
+        sudo -u tak java -jar takserver.war &
+    fi
+    
+    echo ""
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}TAK Server Setup Complete!${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    echo ""
+    echo -e "${GREEN}Access TAK Server at: https://$(hostname -I | awk '{print $1}'):8443${NC}"
+    echo -e "${YELLOW}Default credentials may be in InstallTAK output above${NC}"
+    echo ""
+else
+    echo -e "${RED}TAK Server installation incomplete${NC}"
+    echo "Check InstallTAK output for errors"
+fi
 
 # Keep container running
+echo -e "${BLUE}Keeping container running...${NC}"
 while true; do
     sleep 60
 done
