@@ -46,7 +46,7 @@ chmod +x /opt/installTAK/installTAK
 
 echo -e "${GREEN}✓ InstallTAK script downloaded${NC}"
 
-# Check for TAK Server DEB file (not ZIP!)
+# Check for TAK Server DEB file
 echo -e "${BLUE}Checking for TAK Server DEB files...${NC}"
 cd /setup
 
@@ -76,10 +76,35 @@ fi
 echo -e "${BLUE}Preparing InstallTAK installation...${NC}"
 cp "$TAK_DEB_FILE" /opt/installTAK/
 
-# Also copy the policy file if it exists
+# Copy policy file if it exists
 if [ -f "deb_policy.pol" ]; then
     cp "deb_policy.pol" /opt/installTAK/
     echo -e "${GREEN}✓ Policy file found and copied${NC}"
+else
+    echo -e "${RED}Warning: deb_policy.pol not found${NC}"
+fi
+
+# Copy GPG key file if it exists - THIS WAS THE MISSING PIECE!
+if [ -f "takserver-public-gpg.key" ]; then
+    cp "takserver-public-gpg.key" /opt/installTAK/
+    echo -e "${GREEN}✓ GPG key file found and copied${NC}"
+else
+    echo -e "${RED}Error: takserver-public-gpg.key not found${NC}"
+    echo -e "${RED}Files in /setup:${NC}"
+    ls -la /setup/
+    exit 1
+fi
+
+# Verify all files are in place
+echo -e "${BLUE}Verifying all required files...${NC}"
+cd /opt/installTAK
+if [ -f "$(basename "$TAK_DEB_FILE")" ] && [ -f "takserver-public-gpg.key" ]; then
+    echo -e "${GREEN}✓ All required files present in InstallTAK directory${NC}"
+    ls -la /opt/installTAK/
+else
+    echo -e "${RED}Error: Missing required files in InstallTAK directory${NC}"
+    ls -la /opt/installTAK/
+    exit 1
 fi
 
 # Run InstallTAK script in DEB mode
