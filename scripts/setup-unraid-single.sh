@@ -325,14 +325,12 @@ start_tak_server() {
     
     cd "$TAK_HOME"
     
-    # Start TAK Server with visible logging
+    # Start TAK Server with visible logging (FIXED - removed invalid logging arguments)
     echo -e "${YELLOW}Launching TAK Server process with logging...${NC}"
     
     # Start TAK Server in background with log output
     java -server -Xms1g -Xmx2g \
          -Dloader.path=WEB-INF/lib-provided,WEB-INF/lib,WEB-INF/classes,file:lib/ \
-         --logging.level.root=INFO \
-         --logging.level.com.bbn.marti=DEBUG \
          -jar takserver.war > logs/takserver-startup.log 2>&1 &
     
     TAK_PID=$!
