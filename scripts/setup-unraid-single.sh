@@ -2,6 +2,7 @@
 
 # TAK Server 5.4 Single Container Setup Script for Unraid
 # All-in-one approach with built-in PostgreSQL and TAK Server
+# Alpine Linux Compatible Version
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail  # Exit on error, undefined vars, pipe failures
@@ -13,14 +14,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Global variables
+# Global variables (Alpine-specific paths)
 TAK_ZIP_FILE=""
 SERVER_IP=""
 ADMIN_PASSWORD=""
 DB_PASSWORD=""
 CERT_PASSWORD="atakatak"
 SERVER_ID=""
-POSTGRES_DATA_DIR="/setup/postgres_data"
+POSTGRES_DATA_DIR="/var/lib/postgresql/data"    # Alpine standard location
+POSTGRES_SOCKET_DIR="/var/lib/postgresql/socket" # Alpine persistent socket
 TAK_HOME="/setup/tak"
 
 # Error handling function
@@ -121,59 +123,61 @@ extract_and_setup_files() {
 }
 
 setup_postgresql() {
-    echo -e "${BLUE}Setting up PostgreSQL database...${NC}"
+    echo -e "${BLUE}Setting up PostgreSQL for Alpine Linux...${NC}"
     
-    # Create necessary directories
+    # Create Alpine-specific directories (persistent locations)
     mkdir -p "$POSTGRES_DATA_DIR"
-    mkdir -p /run/postgresql
+    mkdir -p "$POSTGRES_SOCKET_DIR"
     mkdir -p /var/log/postgresql
     
-    # Fix ownership and permissions (Alpine Linux specific)
-    chown -R postgres:postgres "$POSTGRES_DATA_DIR" /run/postgresql /var/log/postgresql 2>/dev/null || true
-    chmod 755 /run/postgresql
+    # Fix ownership and permissions (Alpine way)
+    chown -R postgres:postgres "$POSTGRES_DATA_DIR" "$POSTGRES_SOCKET_DIR" /var/log/postgresql
+    chmod 0700 "$POSTGRES_DATA_DIR"
+    chmod 0755 "$POSTGRES_SOCKET_DIR"
     
-    # Initialize database if not already done
+    # Initialize PostgreSQL if not already done
     if [ ! -f "$POSTGRES_DATA_DIR/postgresql.conf" ]; then
-        echo -e "${YELLOW}Initializing PostgreSQL database...${NC}"
+        echo -e "${YELLOW}Initializing PostgreSQL database for Alpine...${NC}"
         su postgres -c "initdb -D $POSTGRES_DATA_DIR --auth-local=trust --auth-host=md5"
     fi
     
-    # Configure PostgreSQL for container use
+    # Configure PostgreSQL for Alpine container (persistent socket location)
     cat >> "$POSTGRES_DATA_DIR/postgresql.conf" << EOF
 listen_addresses = 'localhost'
 port = 5432
 max_connections = 100
 shared_buffers = 128MB
-unix_socket_directories = '/run/postgresql,/tmp'
+unix_socket_directories = '$POSTGRES_SOCKET_DIR,/tmp'
 log_destination = 'stderr'
 logging_collector = off
+log_line_prefix = '%t [%p]: [%l-1] %m '
 EOF
 
-    # Start PostgreSQL using pg_ctl (Alpine Linux recommended method)
-    echo -e "${YELLOW}Starting PostgreSQL...${NC}"
-    su postgres -c "pg_ctl start -D $POSTGRES_DATA_DIR -l /var/log/postgresql/postgresql.log -w"
+    # Start PostgreSQL using Alpine method (persistent socket location)
+    echo -e "${YELLOW}Starting PostgreSQL with Alpine method...${NC}"
+    su postgres -c "pg_ctl start -D $POSTGRES_DATA_DIR -l /var/log/postgresql/postgresql.log -o '-k $POSTGRES_SOCKET_DIR'"
     
-    # Wait for PostgreSQL to start
+    # Wait for PostgreSQL to start (Alpine-specific check)
     for i in {1..30}; do
-        if su postgres -c "pg_isready -h localhost -p 5432" >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ PostgreSQL started successfully${NC}"
+        if su postgres -c "pg_isready -h $POSTGRES_SOCKET_DIR -p 5432" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ PostgreSQL started successfully on Alpine${NC}"
             break
         fi
         if [ $i -eq 30 ]; then
-            echo -e "${RED}Error: PostgreSQL failed to start${NC}"
+            echo -e "${RED}Error: PostgreSQL failed to start on Alpine${NC}"
             echo -e "${RED}Check logs: cat /var/log/postgresql/postgresql.log${NC}"
             exit 1
         fi
         sleep 1
     done
     
-    # Create TAK database and user
+    # Create TAK database and user (Alpine-specific connection)
     echo -e "${YELLOW}Creating TAK database and user...${NC}"
-    su postgres -c "psql -c \"CREATE DATABASE cot;\"" 2>/dev/null || true
+    su postgres -c "createdb cot" 2>/dev/null || true
     su postgres -c "psql -c \"CREATE USER martiuser WITH PASSWORD '$DB_PASSWORD';\"" 2>/dev/null || true
     su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;\"" 2>/dev/null || true
     
-    echo -e "${GREEN}✓ PostgreSQL database configured${NC}"
+    echo -e "${GREEN}✓ PostgreSQL database configured for Alpine${NC}"
 }
 
 configure_tak_server() {
@@ -321,25 +325,54 @@ start_tak_server() {
     
     cd "$TAK_HOME"
     
-    # Start TAK Server in background
-    echo -e "${YELLOW}Launching TAK Server process...${NC}"
-    java -server -Xms1g -Xmx2g -Dloader.path=WEB-INF/lib-provided,WEB-INF/lib,WEB-INF/classes,file:lib/ \
-         -jar takserver.war &
+    # Start TAK Server with visible logging
+    echo -e "${YELLOW}Launching TAK Server process with logging...${NC}"
+    
+    # Start TAK Server in background with log output
+    java -server -Xms1g -Xmx2g \
+         -Dloader.path=WEB-INF/lib-provided,WEB-INF/lib,WEB-INF/classes,file:lib/ \
+         --logging.level.root=INFO \
+         --logging.level.com.bbn.marti=DEBUG \
+         -jar takserver.war > logs/takserver-startup.log 2>&1 &
     
     TAK_PID=$!
     
-    # Wait for TAK Server to start
-    echo -e "${BLUE}Waiting for TAK Server to initialize...${NC}"
-    for i in {1..120}; do
+    # Monitor TAK Server startup with real logs
+    echo -e "${BLUE}Monitoring TAK Server initialization...${NC}"
+    
+    for i in {1..300}; do  # Increased timeout to 5 minutes
+        # Check if process is still running
+        if ! kill -0 $TAK_PID 2>/dev/null; then
+            echo -e "${RED}TAK Server process died! Check logs:${NC}"
+            echo -e "${RED}Last 20 lines of startup log:${NC}"
+            tail -20 logs/takserver-startup.log
+            exit 1
+        fi
+        
+        # Check if TAK Server is listening
         if netstat -tulpn 2>/dev/null | grep -q ":8443"; then
             echo -e "${GREEN}✓ TAK Server is listening on port 8443!${NC}"
             break
         fi
-        if [ $i -eq 120 ]; then
-            echo -e "${RED}Error: TAK Server failed to start within 2 minutes${NC}"
+        
+        # Show progress with actual log snippets every 10 seconds
+        if [ $((i % 10)) -eq 0 ]; then
+            echo -e "${YELLOW}Waiting for TAK Server... ($i/300)${NC}"
+            
+            # Show recent log entries for debugging
+            if [ -f logs/takserver-startup.log ]; then
+                echo -e "${BLUE}Recent TAK Server logs:${NC}"
+                tail -3 logs/takserver-startup.log | sed 's/^/  > /'
+            fi
+        fi
+        
+        if [ $i -eq 300 ]; then
+            echo -e "${RED}Error: TAK Server failed to start within 5 minutes${NC}"
+            echo -e "${RED}Full startup log:${NC}"
+            cat logs/takserver-startup.log
             exit 1
         fi
-        echo -e "${YELLOW}Waiting for TAK Server... ($i/120)${NC}"
+        
         sleep 1
     done
     
@@ -401,6 +434,7 @@ keep_container_running() {
 main() {
     echo -e "${GREEN}TAK Server 5.4 All-in-One Setup for Unraid${NC}"
     echo -e "${GREEN}Single container with built-in PostgreSQL and TAK Server${NC}"
+    echo -e "${GREEN}Alpine Linux Compatible Version${NC}"
     echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
     echo ""
     
