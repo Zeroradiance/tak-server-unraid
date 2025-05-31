@@ -1,83 +1,50 @@
-name: takserver
+version: '3.8'
 
 services:
-  setup:
-    image: alpine:latest
-    volumes:
-      - ./:/setup
-      - tak_data:/opt/tak
-      - /var/run/docker.sock:/var/run/docker.sock
-    environment:
-      - AUTO_SETUP=${AUTO_SETUP:-true}
-      - TAK_ORG=${TAK_ORG:-TAK}
-      - TAK_STATE=${TAK_STATE:-California}
-      - TAK_CITY=${TAK_CITY:-San Francisco}
-    command: |
-      sh -c '
-        echo "Installing required tools..."
-        apk add --no-cache bash unzip zip openssl curl docker-compose docker-cli openjdk17-jre-headless
-        
-        if [ "$$AUTO_SETUP" = "true" ] && [ -f /setup/takserver-docker-*.zip ]; then
-          echo "Setting up TAK Server..."
-          cd /setup
-          
-          # Extract on host if memory issues occur
-          if [ ! -d tak ] || [ ! -d docker ]; then
-            echo "Extracting TAK Server files..."
-            unzip -q takserver-docker-*.zip
-            cp -r takserver-docker-*/* .
-            rm -rf takserver-docker-*/
-          fi
-          
-          chmod +x scripts/setup-unraid-complete.sh
-          bash ./scripts/setup-unraid-complete.sh
-        else
-          echo "Waiting for manual setup or ZIP file..."
-          echo "Place takserver-docker-5.4-RELEASE-XX.zip in this directory"
-          sleep infinity
-        fi
-      '
-    restart: "no"
-
-  db:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile.takserver-db
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - tak_data:/opt/tak
-    networks:
-      tak:
-        aliases:
-          - tak-database
+  tak-server:
+    image: ubuntu:22.04
+    container_name: tak-server-ubuntu
     restart: unless-stopped
-    depends_on:
-      setup:
-        condition: service_completed_successfully
-    
-  tak:
-    build:
-      context: .
-      dockerfile: ./docker/Dockerfile.takserver
-    volumes:
-      - tak_data:/opt/tak
     ports:
-      - "${WEB_PORT:-8445}:8443"
-      - "${API_PORT:-8446}:8444"
-      - "${STREAM_PORT:-8447}:8446"
-      - "${CLIENT_PORT:-8092}:8089"
-      - "${FED_PORT:-9003}:9000"
-      - "${IGNITE_PORT:-9004}:9001"
-    networks:
-      tak:
-    depends_on:
-      - db
-      - setup
-    restart: unless-stopped
+      - "8445:8443"   # TAK Server Web Interface
+      - "8092:8089"   # ATAK Client Port
+      - "5433:5432"   # PostgreSQL Database
+      - "8444:8444"   # Federation Port (optional)
+      - "8446:8446"   # Certificate Management (optional)
+    volumes:
+      - ./appdata/tak-server:/setup
+    environment:
+      - TZ=America/New_York
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    command: >
+      bash -c "
+        echo 'TAK Server 5.4 Ubuntu Starting...' &&
+        apt-get update -qq &&
+        apt-get install -y git wget curl &&
+        echo 'Downloading setup scripts...' &&
+        git clone https://github.com/Zeroradiance/tak-server-unraid.git /tmp/taksetup &&
+        cp -r /tmp/taksetup/scripts /setup/ &&
+        cp /tmp/taksetup/CoreConfig.xml /setup/ &&
+        cd /setup &&
+        chmod +x scripts/setup-ubuntu.sh &&
+        exec scripts/setup-ubuntu.sh
+      "
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8443"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+networks:
+  default:
+    driver: bridge
 
 volumes:
-  db_data:
-  tak_data:
-    
-networks:
-  tak:
+  tak-data:
+    driver: local
