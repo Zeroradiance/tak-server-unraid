@@ -42,4 +42,7 @@
   <Config Name="TAK Web Interface" Target="8443" Default="8445" Mode="tcp" Description="Port for TAK Server web interface" Type="Port" Display="always" Required="true" Mask="false"/>
   <Config Name="ATAK Client Port" Target="8089" Default="8092" Mode="tcp" Description="Port for ATAK mobile clients" Type="Port" Display="always" Required="true" Mask="false"/>
   <Config Name="Database Port" Target="5432" Default="5433" Mode="tcp" Description="Port for PostgreSQL database" Type="Port" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Memory Limit" Target="" Default="2048" Mode="" Description="Container memory limit in MB" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Startup Timeout" Target="" Default="300" Mode="" Description="TAK Server startup timeout in seconds" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+
 </Container>
