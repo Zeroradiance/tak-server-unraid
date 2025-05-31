@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 InstallTAK DEB Wrapper for Unraid Containers
-# FIXED: Set PGDATA to PostgreSQL CONFIG directory, not data directory
+# FINAL FIX: Properly initialize PostgreSQL before TAK Server installation
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -17,7 +17,7 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 InstallTAK DEB Container Setup${NC}"
-echo -e "${GREEN}FIXED: Proper PGDATA configuration for TAK Server${NC}"
+echo -e "${GREEN}FINAL FIX: Complete PostgreSQL setup before TAK Server${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
@@ -43,44 +43,85 @@ apt-get update -qq
 
 echo -e "${GREEN}✓ PostgreSQL 15 repository added${NC}"
 
-# Install PostgreSQL 15
-echo -e "${BLUE}Installing PostgreSQL 15...${NC}"
+# Install PostgreSQL 15 completely
+echo -e "${BLUE}Installing PostgreSQL 15 with full setup...${NC}"
 apt-get install -y --fix-missing \
     postgresql-15 \
     postgresql-15-postgis-3 \
     postgresql-client-15 \
-    postgresql-contrib-15
+    postgresql-contrib-15 \
+    postgresql-15-postgis-3-scripts
 
 echo -e "${GREEN}✓ PostgreSQL 15 installed${NC}"
 
-# CRITICAL FIX: Set PGDATA to CONFIG directory (what TAK Server expects!)
-echo -e "${BLUE}Configuring PGDATA for TAK Server...${NC}"
-export PGDATA="/etc/postgresql/15/main"  # CONFIG directory, not data!
+# CRITICAL: Stop any running PostgreSQL and reinitialize properly
+echo -e "${BLUE}Reinitializing PostgreSQL for TAK Server...${NC}"
+service postgresql stop || true
+killall postgres || true
+
+# Remove any existing cluster and recreate
+pg_dropcluster --stop 15 main || true
+pg_createcluster 15 main
+
+echo -e "${GREEN}✓ PostgreSQL cluster recreated${NC}"
+
+# Set PGDATA to both data AND config directories
+export PGDATA="/etc/postgresql/15/main"
+export POSTGRES_DATA="/var/lib/postgresql/15/main"
+
+# Make PGDATA permanent in multiple locations
 echo "export PGDATA=/etc/postgresql/15/main" >> /etc/environment
 echo "export PGDATA=/etc/postgresql/15/main" >> /etc/profile
+echo "export PGDATA=/etc/postgresql/15/main" >> /root/.bashrc
 
-echo -e "${GREEN}✓ PGDATA set to CONFIG directory: $PGDATA${NC}"
+# Set ownership correctly (from search result 4)
+chown -R postgres:postgres /var/lib/postgresql/15/main
+chown -R postgres:postgres /etc/postgresql/15/main
+chmod 700 /var/lib/postgresql/15/main
 
-# Start PostgreSQL and ensure it's configured
-echo -e "${BLUE}Starting and configuring PostgreSQL...${NC}"
-service postgresql start || true
+echo -e "${GREEN}✓ PostgreSQL ownership and permissions set${NC}"
 
-# Wait for PostgreSQL to be ready
-for i in {1..30}; do
+# Start PostgreSQL and ensure it's working
+echo -e "${BLUE}Starting PostgreSQL 15...${NC}"
+service postgresql start
+
+# Wait for PostgreSQL to be fully ready
+for i in {1..60}; do
     if su postgres -c "pg_isready -p 5432" >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ PostgreSQL 15 is running${NC}"
+        echo -e "${GREEN}✓ PostgreSQL 15 is running and ready${NC}"
         break
+    fi
+    if [ $i -eq 60 ]; then
+        echo -e "${RED}PostgreSQL failed to start properly${NC}"
+        service postgresql status
+        exit 1
     fi
     sleep 1
 done
 
-# Create TAK database and user (do this BEFORE installing TAK Server)
-echo -e "${BLUE}Creating TAK database and user...${NC}"
-su postgres -c "createdb cot" 2>/dev/null || true
-su postgres -c "psql -c \"CREATE USER martiuser WITH PASSWORD 'atakatak' SUPERUSER;\"" 2>/dev/null || true
+# Pre-create TAK database and user (exactly like TAK Server expects)
+echo -e "${BLUE}Setting up TAK database (like TAK Server setup script)...${NC}"
+
+# Create the martiuser with the exact password TAK expects
+su postgres -c "psql -c \"CREATE ROLE martiuser LOGIN ENCRYPTED PASSWORD 'md564d5850dcafc6b4ddd03040ad1260bc2' SUPERUSER INHERIT CREATEDB NOCREATEROLE;\"" 2>/dev/null || true
+
+# Create the cot database
+su postgres -c "createdb --owner=martiuser cot" 2>/dev/null || true
+
+# Grant all privileges
 su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;\"" 2>/dev/null || true
 
-echo -e "${GREEN}✓ TAK database prepared${NC}"
+echo -e "${GREEN}✓ TAK database and user created${NC}"
+
+# Verify database setup
+echo -e "${BLUE}Verifying database setup...${NC}"
+DB_EXISTS=$(su postgres -c "psql -l" | grep cot || true)
+if [ -n "$DB_EXISTS" ]; then
+    echo -e "${GREEN}✓ Database 'cot' exists and is ready${NC}"
+else
+    echo -e "${RED}Database setup failed${NC}"
+    exit 1
+fi
 
 # Clone InstallTAK repository
 echo -e "${BLUE}Downloading InstallTAK script...${NC}"
@@ -118,70 +159,60 @@ else
     exit 1
 fi
 
-# Set critical environment variables for InstallTAK
-echo -e "${BLUE}Setting environment for InstallTAK...${NC}"
-export PGDATA="/etc/postgresql/15/main"  # CONFIG directory!
+# Set all environment variables for InstallTAK
+echo -e "${BLUE}Setting complete environment for InstallTAK...${NC}"
+export PGDATA="/etc/postgresql/15/main"
 export DEBIAN_FRONTEND=noninteractive
 export IS_DOCKER=true
+export PATH="/usr/lib/postgresql/15/bin:$PATH"
 
+# Verify PGDATA directory exists and has content
 echo "PGDATA is set to: $PGDATA"
-echo "Contents of PGDATA directory:"
-ls -la "$PGDATA" || echo "PGDATA directory not found"
-
-# Run InstallTAK script
-echo -e "${BLUE}Running InstallTAK script with correct PGDATA...${NC}"
-echo -e "${YELLOW}This may take 10-15 minutes...${NC}"
-
-cd /opt/installTAK
-./installTAK "$(basename "$TAK_DEB_FILE")"
-
-# If TAK Server package failed to configure, try manual fix
-if dpkg -l | grep takserver | grep -q "iF"; then
-    echo -e "${YELLOW}TAK Server package needs reconfiguration...${NC}"
-    
-    # Create missing directories if needed
-    mkdir -p /opt/tak/config
-    
-    # Try to reconfigure the package
-    dpkg --configure takserver || {
-        echo -e "${YELLOW}Manual configuration needed...${NC}"
-        
-        # Create basic TAK Server structure if missing
-        mkdir -p /opt/tak/{config,certs,logs,lib}
-        chown -R tak:tak /opt/tak 2>/dev/null || true
-        
-        # Try reconfigure again
-        dpkg --configure takserver || true
-    }
+if [ -d "$PGDATA" ] && [ "$(ls -A $PGDATA)" ]; then
+    echo -e "${GREEN}✓ PGDATA directory exists and contains configuration files${NC}"
+    ls -la "$PGDATA" | head -5
+else
+    echo -e "${RED}PGDATA directory is empty or missing${NC}"
+    exit 1
 fi
 
-# Final status check
-echo -e "${BLUE}Checking TAK Server status...${NC}"
+# Run InstallTAK with properly configured environment
+echo -e "${BLUE}Running InstallTAK with pre-configured PostgreSQL...${NC}"
+echo -e "${YELLOW}This should work now since PostgreSQL is properly set up...${NC}"
 
-if [ -d "/opt/tak" ] && [ -f "/opt/tak/takserver.war" ]; then
-    echo -e "${GREEN}✓ TAK Server files are present${NC}"
-    
-    # Try to start TAK Server manually if service didn't start
-    if ! service takserver status >/dev/null 2>&1; then
-        echo -e "${YELLOW}Starting TAK Server manually...${NC}"
-        cd /opt/tak
-        sudo -u tak java -jar takserver.war &
-    fi
-    
+cd /opt/installTAK
+
+# Export all environment variables for the InstallTAK process
+export PGDATA="/etc/postgresql/15/main"
+export DEBIAN_FRONTEND=noninteractive
+
+./installTAK "$(basename "$TAK_DEB_FILE")"
+
+INSTALL_RESULT=$?
+
+if [ $INSTALL_RESULT -eq 0 ]; then
     echo ""
     echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}TAK Server Setup Complete!${NC}"
+    echo -e "${GREEN}TAK Server Installation Successful!${NC}"
     echo -e "${GREEN}========================================${NC}"
     echo ""
     echo -e "${GREEN}Access TAK Server at: https://$(hostname -I | awk '{print $1}'):8443${NC}"
-    echo -e "${YELLOW}Default credentials may be in InstallTAK output above${NC}"
+    echo -e "${YELLOW}Check InstallTAK output above for admin credentials${NC}"
     echo ""
 else
-    echo -e "${RED}TAK Server installation incomplete${NC}"
-    echo "Check InstallTAK output for errors"
+    echo -e "${YELLOW}InstallTAK completed with warnings/errors${NC}"
+    
+    # Try to start TAK Server manually if needed
+    if [ -f "/opt/tak/takserver.war" ]; then
+        echo -e "${YELLOW}Attempting manual TAK Server start...${NC}"
+        cd /opt/tak
+        service takserver start || {
+            sudo -u tak java -jar takserver.war &
+        }
+    fi
 fi
 
-# Keep container running
+# Keep container running and monitor
 echo -e "${BLUE}Keeping container running...${NC}"
 while true; do
     sleep 60
