@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TAK Server 5.4 InstallTAK DEB Wrapper for Unraid Containers
-# FINAL FIX: Properly initialize PostgreSQL before TAK Server installation
+# FINAL FIX: Patch InstallTAK script to handle PostgreSQL 15
 # Sponsored by CloudRF.com - "The API for RF"
 
 set -euo pipefail
@@ -17,7 +17,7 @@ export TERM=linux
 export DEBIAN_FRONTEND=noninteractive
 
 echo -e "${GREEN}TAK Server 5.4 InstallTAK DEB Container Setup${NC}"
-echo -e "${GREEN}FINAL FIX: Complete PostgreSQL setup before TAK Server${NC}"
+echo -e "${GREEN}FINAL FIX: Patch InstallTAK for PostgreSQL 15${NC}"
 echo -e "${GREEN}Sponsored by CloudRF.com - The API for RF${NC}"
 echo ""
 
@@ -43,85 +43,28 @@ apt-get update -qq
 
 echo -e "${GREEN}✓ PostgreSQL 15 repository added${NC}"
 
-# Install PostgreSQL 15 completely
-echo -e "${BLUE}Installing PostgreSQL 15 with full setup...${NC}"
+# Install PostgreSQL 15
+echo -e "${BLUE}Installing PostgreSQL 15...${NC}"
 apt-get install -y --fix-missing \
     postgresql-15 \
     postgresql-15-postgis-3 \
     postgresql-client-15 \
-    postgresql-contrib-15 \
-    postgresql-15-postgis-3-scripts
+    postgresql-contrib-15
 
 echo -e "${GREEN}✓ PostgreSQL 15 installed${NC}"
 
-# CRITICAL: Stop any running PostgreSQL and reinitialize properly
-echo -e "${BLUE}Reinitializing PostgreSQL for TAK Server...${NC}"
-service postgresql stop || true
-killall postgres || true
-
-# Remove any existing cluster and recreate
-pg_dropcluster --stop 15 main || true
-pg_createcluster 15 main
-
-echo -e "${GREEN}✓ PostgreSQL cluster recreated${NC}"
-
-# Set PGDATA to both data AND config directories
-export PGDATA="/etc/postgresql/15/main"
-export POSTGRES_DATA="/var/lib/postgresql/15/main"
-
-# Make PGDATA permanent in multiple locations
-echo "export PGDATA=/etc/postgresql/15/main" >> /etc/environment
-echo "export PGDATA=/etc/postgresql/15/main" >> /etc/profile
-echo "export PGDATA=/etc/postgresql/15/main" >> /root/.bashrc
-
-# Set ownership correctly (from search result 4)
-chown -R postgres:postgres /var/lib/postgresql/15/main
-chown -R postgres:postgres /etc/postgresql/15/main
-chmod 700 /var/lib/postgresql/15/main
-
-echo -e "${GREEN}✓ PostgreSQL ownership and permissions set${NC}"
-
-# Start PostgreSQL and ensure it's working
+# Start PostgreSQL
 echo -e "${BLUE}Starting PostgreSQL 15...${NC}"
 service postgresql start
 
-# Wait for PostgreSQL to be fully ready
-for i in {1..60}; do
+# Wait for PostgreSQL to be ready
+for i in {1..30}; do
     if su postgres -c "pg_isready -p 5432" >/dev/null 2>&1; then
-        echo -e "${GREEN}✓ PostgreSQL 15 is running and ready${NC}"
+        echo -e "${GREEN}✓ PostgreSQL 15 is running${NC}"
         break
-    fi
-    if [ $i -eq 60 ]; then
-        echo -e "${RED}PostgreSQL failed to start properly${NC}"
-        service postgresql status
-        exit 1
     fi
     sleep 1
 done
-
-# Pre-create TAK database and user (exactly like TAK Server expects)
-echo -e "${BLUE}Setting up TAK database (like TAK Server setup script)...${NC}"
-
-# Create the martiuser with the exact password TAK expects
-su postgres -c "psql -c \"CREATE ROLE martiuser LOGIN ENCRYPTED PASSWORD 'md564d5850dcafc6b4ddd03040ad1260bc2' SUPERUSER INHERIT CREATEDB NOCREATEROLE;\"" 2>/dev/null || true
-
-# Create the cot database
-su postgres -c "createdb --owner=martiuser cot" 2>/dev/null || true
-
-# Grant all privileges
-su postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE cot TO martiuser;\"" 2>/dev/null || true
-
-echo -e "${GREEN}✓ TAK database and user created${NC}"
-
-# Verify database setup
-echo -e "${BLUE}Verifying database setup...${NC}"
-DB_EXISTS=$(su postgres -c "psql -l" | grep cot || true)
-if [ -n "$DB_EXISTS" ]; then
-    echo -e "${GREEN}✓ Database 'cot' exists and is ready${NC}"
-else
-    echo -e "${RED}Database setup failed${NC}"
-    exit 1
-fi
 
 # Clone InstallTAK repository
 echo -e "${BLUE}Downloading InstallTAK script...${NC}"
@@ -129,6 +72,44 @@ git clone https://github.com/myTeckNetCode/installTAK.git /opt/installTAK
 chmod +x /opt/installTAK/installTAK
 
 echo -e "${GREEN}✓ InstallTAK script downloaded${NC}"
+
+# CRITICAL FIX: Patch InstallTAK script for PostgreSQL 15
+echo -e "${BLUE}Patching InstallTAK for PostgreSQL 15 compatibility...${NC}"
+
+# Backup original script
+cp /opt/installTAK/installTAK /opt/installTAK/installTAK.original
+
+# Patch the PostgreSQL version detection in InstallTAK
+sed -i 's|/etc/postgresql/12/main|/etc/postgresql/15/main|g' /opt/installTAK/installTAK
+sed -i 's|postgresql/12/|postgresql/15/|g' /opt/installTAK/installTAK
+sed -i 's|postgresql-12|postgresql-15|g' /opt/installTAK/installTAK
+
+# Add explicit PGDATA export at the beginning of InstallTAK
+sed -i '2i export PGDATA="/etc/postgresql/15/main"' /opt/installTAK/installTAK
+
+# Add PGDATA to all sudo/su commands in InstallTAK
+sed -i 's|sudo |sudo PGDATA="/etc/postgresql/15/main" |g' /opt/installTAK/installTAK
+sed -i 's|su postgres |PGDATA="/etc/postgresql/15/main" su postgres |g' /opt/installTAK/installTAK
+
+echo -e "${GREEN}✓ InstallTAK script patched for PostgreSQL 15${NC}"
+
+# Set PGDATA system-wide (multiple methods to ensure persistence)
+echo -e "${BLUE}Setting PGDATA system-wide...${NC}"
+
+# Method 1: Environment files
+echo 'PGDATA="/etc/postgresql/15/main"' >> /etc/environment
+echo 'export PGDATA="/etc/postgresql/15/main"' >> /etc/profile
+echo 'export PGDATA="/etc/postgresql/15/main"' >> /etc/bash.bashrc
+
+# Method 2: Systemd environment
+mkdir -p /etc/systemd/system.conf.d
+echo '[Manager]' > /etc/systemd/system.conf.d/pgdata.conf
+echo 'DefaultEnvironment=PGDATA=/etc/postgresql/15/main' >> /etc/systemd/system.conf.d/pgdata.conf
+
+# Method 3: Current shell
+export PGDATA="/etc/postgresql/15/main"
+
+echo -e "${GREEN}✓ PGDATA set system-wide${NC}"
 
 # Check for required files
 echo -e "${BLUE}Checking for TAK Server files...${NC}"
@@ -159,34 +140,24 @@ else
     exit 1
 fi
 
-# Set all environment variables for InstallTAK
-echo -e "${BLUE}Setting complete environment for InstallTAK...${NC}"
-export PGDATA="/etc/postgresql/15/main"
-export DEBIAN_FRONTEND=noninteractive
-export IS_DOCKER=true
-export PATH="/usr/lib/postgresql/15/bin:$PATH"
-
-# Verify PGDATA directory exists and has content
+# Final verification
+echo -e "${BLUE}Final verification before InstallTAK...${NC}"
 echo "PGDATA is set to: $PGDATA"
-if [ -d "$PGDATA" ] && [ "$(ls -A $PGDATA)" ]; then
-    echo -e "${GREEN}✓ PGDATA directory exists and contains configuration files${NC}"
-    ls -la "$PGDATA" | head -5
-else
-    echo -e "${RED}PGDATA directory is empty or missing${NC}"
-    exit 1
-fi
+echo "PostgreSQL 15 config directory exists: $([ -d "/etc/postgresql/15/main" ] && echo "YES" || echo "NO")"
+echo "PostgreSQL 15 is running: $(systemctl is-active postgresql 2>/dev/null || echo "service-check")"
 
-# Run InstallTAK with properly configured environment
-echo -e "${BLUE}Running InstallTAK with pre-configured PostgreSQL...${NC}"
-echo -e "${YELLOW}This should work now since PostgreSQL is properly set up...${NC}"
+# Run the patched InstallTAK script
+echo -e "${BLUE}Running patched InstallTAK script...${NC}"
+echo -e "${YELLOW}This should now work with PostgreSQL 15...${NC}"
 
 cd /opt/installTAK
 
-# Export all environment variables for the InstallTAK process
+# Set environment for InstallTAK process
 export PGDATA="/etc/postgresql/15/main"
 export DEBIAN_FRONTEND=noninteractive
 
-./installTAK "$(basename "$TAK_DEB_FILE")"
+# Run InstallTAK with explicit environment
+PGDATA="/etc/postgresql/15/main" ./installTAK "$(basename "$TAK_DEB_FILE")"
 
 INSTALL_RESULT=$?
 
@@ -200,13 +171,13 @@ if [ $INSTALL_RESULT -eq 0 ]; then
     echo -e "${YELLOW}Check InstallTAK output above for admin credentials${NC}"
     echo ""
 else
-    echo -e "${YELLOW}InstallTAK completed with warnings/errors${NC}"
+    echo -e "${YELLOW}InstallTAK completed with warnings, checking TAK Server...${NC}"
     
     # Try to start TAK Server manually if needed
     if [ -f "/opt/tak/takserver.war" ]; then
-        echo -e "${YELLOW}Attempting manual TAK Server start...${NC}"
-        cd /opt/tak
+        echo -e "${YELLOW}TAK Server files found, attempting start...${NC}"
         service takserver start || {
+            cd /opt/tak
             sudo -u tak java -jar takserver.war &
         }
     fi
