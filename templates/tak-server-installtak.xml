@@ -12,10 +12,16 @@
   <Overview>TAK Server 5.4 using InstallTAK Script for Unraid
 
 **PROVEN COMMUNITY SOLUTION:**
-1. Download TAK Server 5.4 ZIP from https://tak.gov/products/tak-server
-2. Place takserver-docker-*.zip in /mnt/user/appdata/tak-server
-3. Start container - InstallTAK handles everything automatically
-4. Access TAK Server at https://YOUR-IP:8443
+1. Download TAK Server 5.4 DEB from https://tak.gov/products/tak-server
+2. Download required files: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol
+3. Place all files in /mnt/user/appdata/tak-server
+4. Start container - InstallTAK handles everything automatically
+5. Access TAK Server at https://YOUR-IP:8443
+
+**REQUIRED FILES:**
+✓ takserver_5.4-RELEASE-XX_all.deb (main package)
+✓ takserver-public-gpg.key (GPG verification key)
+✓ deb_policy.pol (policy file)
 
 **FEATURES:**
 ✓ Uses proven InstallTAK script (42+ GitHub stars)
@@ -23,7 +29,7 @@
 ✓ Automatic PostgreSQL setup and configuration
 ✓ Professional certificate generation
 ✓ Built-in setup wizard
-✓ One-command installation process
+✓ Native Ubuntu DEB installation
 
 **ADVANTAGES:**
 ✓ Community maintained and supported
@@ -42,7 +48,7 @@
   <DonateLink/>
   <Description>TAK Server 5.4 using proven InstallTAK script for automated setup</Description>
   
-  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where takserver-docker-*.zip should be placed and all TAK data is stored" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
+  <Config Name="TAK Server Data" Target="/setup" Default="/mnt/user/appdata/tak-server" Mode="rw" Description="Directory where TAK Server DEB files should be placed: takserver_*_all.deb, takserver-public-gpg.key, deb_policy.pol" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/tak-server</Config>
   <Config Name="TAK Web Interface" Target="8443" Default="8443" Mode="tcp" Description="Port for TAK Server web interface (HTTPS)" Type="Port" Display="always" Required="true" Mask="false">8443</Config>
   <Config Name="ATAK Client Port" Target="8089" Default="8089" Mode="tcp" Description="Port for ATAK mobile clients (SSL)" Type="Port" Display="always" Required="true" Mask="false">8089</Config>
   <Config Name="API Port" Target="8080" Default="8080" Mode="tcp" Description="Port for TAK Server API" Type="Port" Display="advanced" Required="false" Mask="false">8080</Config>
